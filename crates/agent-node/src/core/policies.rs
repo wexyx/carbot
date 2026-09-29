@@ -64,11 +64,11 @@ impl Policy {
         }
         if self.members.is_empty()
             || self.members.len() > 8
-            || !(1..=6).contains(&self.rounds)
+            || !(1..=60).contains(&self.rounds)
             || self.instructions.len() > 8192
         {
             return Err(
-                "policy requires 1..8 members, 1..6 rounds and <=8192 instruction bytes".into(),
+                "policy requires 1..8 members, 1..60 rounds and <=8192 instruction bytes".into(),
             );
         }
         for (i, m) in self.members.iter().enumerate() {
