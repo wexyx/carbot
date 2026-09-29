@@ -17,7 +17,6 @@ struct Frame {
     cursor_row: u16,
     drawn: bool,
     last: String,
-    title: String,
 }
 /// Inline REPL: committed output belongs to native terminal scrollback.
 /// Only the current input/permission region is redrawn; mouse events are never captured.
@@ -76,7 +75,9 @@ impl Screen {
         };
         let input = wrap(&format!("❯ {text}"), width);
         let cursor = wrap(&format!("❯ {before}"), width);
-        let input_start = cursor.len().saturating_sub(4);
+        // Reserve up to five footer rows even in a small terminal.
+        let input_capacity = usize::from(rows).saturating_sub(5).clamp(1, 4);
+        let input_start = cursor.len().saturating_sub(input_capacity);
         let mut lines = vec![];
         let pending = wrap(&super::markdown::render(&frame.pending), width);
         if !frame.pending.is_empty() {
@@ -103,14 +104,11 @@ impl Screen {
             editor.suggestions().join("  ")
         };
 
+        let footer = footer(title, session_info, &status, width);
+        lines.truncate(usize::from(rows).saturating_sub(input_capacity + footer.len()));
         let input_row = lines.len();
-        lines.extend(input.iter().skip(input_start).take(4).cloned());
-        lines.extend(
-            wrap(&format!("│ {session_info}"), width)
-                .into_iter()
-                .take(2),
-        );
-        lines.push(wrap(&status, width).into_iter().next().unwrap_or_default());
+        lines.extend(input.iter().skip(input_start).take(input_capacity).cloned());
+        lines.extend(footer);
         let cursor_row =
             (input_row + cursor.len().saturating_sub(1).saturating_sub(input_start)) as u16;
         let cursor_col = cursor
@@ -127,13 +125,6 @@ impl Screen {
             queue!(out, MoveUp(frame.cursor_row)).map_err(|e| e.to_string())?;
         }
         queue!(out, Clear(ClearType::FromCursorDown)).map_err(|e| e.to_string())?;
-        if frame.title != title {
-            self.theme
-                .write(&mut out, &format!("CARBOT · {title}"))
-                .map_err(|e| e.to_string())?;
-            write!(out, "\r\n").map_err(|e| e.to_string())?;
-            frame.title = title.into();
-        }
         if !committed.is_empty() {
             let rendered = super::markdown::render(&tools.render(&committed, width));
             for line in wrap(&rendered, width) {
@@ -192,6 +183,24 @@ pub(super) fn wrap(text: &str, width: usize) -> Vec<String> {
     }
     lines
 }
+// Metadata belongs to the live input region, never to committed chat scrollback.
+fn footer(title: &str, session_info: &str, status: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    if !status.is_empty() {
+        lines.push(wrap(status, width).into_iter().next().unwrap_or_default());
+    }
+    lines.extend(
+        wrap(&format!("│ {session_info}"), width)
+            .into_iter()
+            .take(2),
+    );
+    lines.extend(
+        wrap(&format!("CARBOT · {title}"), width)
+            .into_iter()
+            .take(2),
+    );
+    lines
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,5 +208,20 @@ mod tests {
     fn wrapping_is_unicode_aware_and_filters_terminal_controls() {
         assert_eq!(wrap("你好a", 4), vec!["你好", "a"]);
         assert!(!wrap("a\x1b[2Jb", 30).join("").contains('\x1b'));
+    }
+    #[test]
+    fn metadata_is_last_and_notice_is_shown_once() {
+        let lines = footer(
+            "default · group · 项目 abc · 会话 def",
+            "模型 · 上下文",
+            "已恢复最近的聊天记录",
+            120,
+        );
+        assert_eq!(
+            lines.last().unwrap(),
+            "CARBOT · default · group · 项目 abc · 会话 def"
+        );
+        assert_eq!(lines.iter().filter(|s| s.contains("已恢复")).count(), 1);
+        assert!(lines[1].contains("模型"));
     }
 }

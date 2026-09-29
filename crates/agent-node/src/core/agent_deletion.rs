@@ -58,12 +58,10 @@ impl Core {
                 }) {
                     return Err("请等待当前任务完成后删除 Agent".into());
                 }
-                if let Some(rows) = d.collections.get_mut(collection) {
-                    rows.remove(key);
-                }
-                if let Some(rows) = d.collections.get_mut("credentials") {
-                    rows.retain(|_, r| !(r["project_id"] == json!(p) && r["client_id"] == id));
-                }
+                d.remove(collection, key);
+                d.retain("credentials", |r| {
+                    !(r["project_id"] == json!(p) && r["client_id"] == id)
+                });
                 Ok(json!({"status":"deleted","history_preserved":true}))
             })
             .await

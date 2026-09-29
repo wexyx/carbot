@@ -20,19 +20,10 @@ pub(crate) struct Settings {
 }
 impl Settings {
     fn path() -> PathBuf {
-        PathBuf::from(std::env::var_os("CARBOT_DATA_DIR").unwrap_or_else(|| ".carbot".into()))
-            .join("admin-agent.json")
+        agent_runtime::paths::data_dir().join("default-agent.json")
     }
     pub(crate) fn load() -> Result<Self, String> {
-        let mut settings = match std::fs::read(Self::path()) {
-            Ok(bytes) => Self {
-                values: serde_json::from_slice(&bytes).map_err(
-                    |_| "Invalid admin-agent.json; repair or move that file before configuring",
-                )?,
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
-            Err(e) => return Err(e.to_string()),
-        };
+        let mut settings = Self::load_saved(&agent_runtime::paths::data_dir())?;
         for key in KEYS {
             if let Ok(value) = std::env::var(key) {
                 // Launcher dotenv values are defaults, not explicit operator overrides.
@@ -48,6 +39,18 @@ impl Settings {
         }
         Ok(settings)
     }
+    fn load_saved(dir: &std::path::Path) -> Result<Self, String> {
+        let path = dir.join("default-agent.json");
+        match std::fs::read(path) {
+            Ok(bytes) => Ok(Self {
+                values: serde_json::from_slice(&bytes).map_err(
+                    |_| "Invalid default-agent.json; repair or move that file before configuring",
+                )?,
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
     pub(crate) fn get(&self, key: &str) -> &str {
         self.values.get(key).map(String::as_str).unwrap_or("")
     }
@@ -58,7 +61,7 @@ impl Settings {
     }
     pub(crate) fn update(&mut self, values: BTreeMap<String, String>) -> Result<(), String> {
         if values.keys().any(|key| !KEYS.contains(&key.as_str())) {
-            return Err("unknown AdminAgent configuration field".into());
+            return Err("unknown default Agent configuration field".into());
         }
         agent_runtime::context::ContextBudget::from_lookup(|key| {
             values
@@ -102,16 +105,19 @@ impl Settings {
         self.save_to(&Self::path())
     }
     fn save_to(&self, path: &std::path::Path) -> Result<(), String> {
+        self.write_to(path).map_err(|e| e.to_string())
+    }
+    fn write_to(&self, path: &std::path::Path) -> std::io::Result<()> {
         let parent = path
             .parent()
-            .ok_or("configuration requires a parent directory")?;
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            .ok_or_else(|| std::io::Error::other("configuration requires a parent directory"))?;
+        std::fs::create_dir_all(parent)?;
         // tempfile creates an owner-only file on Unix; rename avoids partial configuration writes.
-        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-        serde_json::to_writer_pretty(&mut file, &self.values).map_err(|e| e.to_string())?;
-        file.flush().map_err(|e| e.to_string())?;
-        file.as_file().sync_all().map_err(|e| e.to_string())?;
-        file.persist(path).map_err(|e| e.error.to_string())?;
+        let mut file = tempfile::NamedTempFile::new_in(parent)?;
+        serde_json::to_writer_pretty(&mut file, &self.values)?;
+        file.flush()?;
+        file.as_file().sync_all()?;
+        file.persist(path).map_err(|e| e.error)?;
         Ok(())
     }
 }
@@ -119,6 +125,26 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn loads_default_configuration_and_rejects_corruption() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(Settings::load_saved(dir.path()).unwrap().values.is_empty());
+        let path = dir.path().join("default-agent.json");
+        std::fs::write(&path, br#"{"ADMIN_AGENT_PROVIDER":"claude"}"#).unwrap();
+        assert_eq!(
+            Settings::load_saved(dir.path())
+                .unwrap()
+                .get("ADMIN_AGENT_PROVIDER"),
+            "claude"
+        );
+        std::fs::write(&path, b"invalid").unwrap();
+        assert!(
+            Settings::load_saved(dir.path())
+                .err()
+                .unwrap()
+                .contains("default-agent.json")
+        );
+    }
     #[test]
     fn validates_and_saves_private_literal_configuration() {
         let dir = tempfile::tempdir().unwrap();
@@ -134,7 +160,7 @@ mod tests {
             cfg.update(BTreeMap::from([("AGENT_WORKDIR".into(), "/".into())]))
                 .is_err()
         );
-        let path = dir.path().join("admin-agent.json");
+        let path = dir.path().join("default-agent.json");
         cfg.save_to(&path).unwrap();
         let saved: BTreeMap<String, String> =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();

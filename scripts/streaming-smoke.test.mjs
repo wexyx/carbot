@@ -1,3 +1,4 @@
+import {readState} from './state-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createServer} from 'node:http'
@@ -49,7 +50,7 @@ test('live SSE is prompt, fragments are batched, final state is durable, interru
       try{await Promise.race([done,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('stream did not finish')),5000)})])}
       finally{clearTimeout(timeout);controller.abort();await consume}
       if(interruptTask)await interruptTask
-      const disk=JSON.parse(await readFile(join(dir,'state.json'),'utf8')).collections.management_sessions[session.id]
+      const disk=(await readState(dir)).collections.management_sessions[session.id]
       assert.equal(disk.status,interrupt?'failed':'completed')
       assert.equal(disk.events,undefined)
       const saved=await request(server,`/v1/repl/${project}/chats/admin/logs?after=${before}`)

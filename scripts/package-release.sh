@@ -14,6 +14,8 @@ cp scripts/release/carbot "$stage/carbot/bin/carbot"
 chmod 755 "$stage/carbot/bin/carbot"
 cp -R apps/web/dist "$stage/carbot/web"
 cp README.md "$stage/carbot/README.md"
+mkdir -p "$stage/carbot/skills"
+cp -R skills/system "$stage/carbot/skills/system"
 archive="carbot-$target.tar.gz"
 tar -czf "dist/$archive" -C "$stage" carbot
 cd dist

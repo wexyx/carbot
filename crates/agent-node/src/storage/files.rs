@@ -1,4 +1,4 @@
-//! Plain JSON snapshots. No SQL engine or external service.
+//! Incremental state journal with legacy snapshot import. No SQL engine.
 use crate::*;
 use fs2::FileExt;
 use std::{
@@ -11,7 +11,9 @@ use std::{
 pub struct Data {
     format_version: u32,
     pub sequence: u64,
-    pub collections: HashMap<String, HashMap<String, Value>>,
+    pub(super) collections: HashMap<String, HashMap<String, Value>>,
+    #[serde(skip)]
+    undo: Option<HashMap<(String, String), Option<Value>>>,
 }
 impl Default for Data {
     fn default() -> Self {
@@ -19,6 +21,7 @@ impl Default for Data {
             format_version: 1,
             sequence: 0,
             collections: HashMap::new(),
+            undo: None,
         }
     }
 }
@@ -32,7 +35,44 @@ impl Data {
             .map(|c| c.values().cloned().collect())
             .unwrap_or_default()
     }
+    fn track(&mut self, collection: &str, key: &str) {
+        if self.undo.is_some() {
+            let identity = (collection.to_owned(), key.to_owned());
+            if !self.undo.as_ref().unwrap().contains_key(&identity) {
+                let previous = self.get(collection, key).cloned();
+                self.undo.as_mut().unwrap().insert(identity, previous);
+            }
+        }
+    }
+    pub fn remove(&mut self, collection: &str, key: &str) {
+        self.track(collection, key);
+        if let Some(rows) = self.collections.get_mut(collection) {
+            rows.remove(key);
+        }
+    }
+    pub fn retain(&mut self, collection: &str, keep: impl Fn(&Value) -> bool) {
+        let keys: Vec<_> = self
+            .collections
+            .get(collection)
+            .into_iter()
+            .flat_map(|rows| rows.iter())
+            .filter(|(_, value)| !keep(value))
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in keys {
+            self.remove(collection, &key);
+        }
+    }
+    fn rollback(&mut self) {
+        for ((collection, key), previous) in self.undo.take().unwrap_or_default() {
+            match previous {
+                Some(value) => self.set(&collection, &key, value),
+                None => self.remove(&collection, &key),
+            }
+        }
+    }
     pub fn set(&mut self, collection: &str, key: &str, value: Value) {
+        self.track(collection, key);
         self.collections
             .entry(collection.into())
             .or_default()
@@ -100,12 +140,43 @@ impl Store {
         change: impl FnOnce(&mut Data) -> Result<T, String>,
     ) -> Result<T, String> {
         let mut data = self.0.data.lock().map_err(|_| "file store lock poisoned")?;
-        let mut next = data.clone();
-        let result = change(&mut next)?;
-        if let Some(path) = &self.0.file {
-            atomic_save(path, &next).map_err(|e| format!("save local file: {e}"))?;
+        data.undo = Some(HashMap::new());
+        let result = match change(&mut data) {
+            Ok(result) => result,
+            Err(error) => {
+                data.rollback();
+                return Err(error);
+            }
+        };
+        let changes: Vec<_> = data
+            .undo
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter_map(|((collection, key), previous)| {
+                let value = data.get(collection, key).cloned();
+                (value != *previous).then(|| super::state_journal::Change {
+                    collection: collection.clone(),
+                    key: key.clone(),
+                    deleted: value.is_none(),
+                    value: value.unwrap_or(Value::Null),
+                })
+            })
+            .collect();
+        if !changes.is_empty() {
+            let Some(sequence) = data.sequence.checked_add(1) else {
+                data.rollback();
+                return Err("state sequence overflow".into());
+            };
+            if let Some(path) = &self.0.file {
+                if let Err(error) = super::state_journal::append(path, sequence, changes) {
+                    data.rollback();
+                    return Err(error);
+                }
+            }
+            data.sequence = sequence;
         }
-        *data = next;
+        data.undo = None;
         Ok(result)
     }
 }
@@ -181,17 +252,16 @@ pub async fn open(dir: &FilePath) -> Result<Store, String> {
     if data.format_version != 1 {
         return Err("unsupported state.json format version".into());
     }
-    if !path.exists() {
-        atomic_save(&path, &data).map_err(|e| e.to_string())?;
-    }
     let logs = super::ChatLog::open(dir.join("chats"));
     if super::chat_migration::migrate(dir, &mut data, &logs).await? {
         atomic_save(&path, &data).map_err(|e| e.to_string())?;
     }
+    let journal = dir.join("state.jsonl");
+    super::state_journal::replay(&journal, &mut data)?;
     Ok(Store(Arc::new(Inner {
         logs,
         data: std::sync::Mutex::new(data),
-        file: Some(path),
+        file: Some(journal),
         _lock: Some(lock),
     })))
 }
@@ -245,13 +315,14 @@ mod tests {
             .await
             .unwrap();
         let on_disk: Value =
-            serde_json::from_slice(&std::fs::read(dir.0.join("state.json")).unwrap()).unwrap();
-        assert_eq!(on_disk["collections"]["sessions"]["a"]["content"], "你好");
+            serde_json::from_slice(&std::fs::read(dir.0.join("state.jsonl")).unwrap()).unwrap();
+        assert_eq!(on_disk["changes"][0]["value"]["content"], "你好");
+        assert!(!dir.0.join("state.json").exists());
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(
-                std::fs::metadata(dir.0.join("state.json"))
+                std::fs::metadata(dir.0.join("state.jsonl"))
                     .unwrap()
                     .permissions()
                     .mode()
@@ -287,8 +358,8 @@ mod tests {
             .await;
         assert!(failed.is_err());
         assert_eq!(store.get("test", "a").await, Some(json!(1)));
-        std::fs::rename(dir.0.join("state.json"), dir.0.join("saved.json")).unwrap();
-        std::fs::create_dir(dir.0.join("state.json")).unwrap();
+        std::fs::rename(dir.0.join("state.jsonl"), dir.0.join("saved.jsonl")).unwrap();
+        std::fs::create_dir(dir.0.join("state.jsonl")).unwrap();
         assert!(store.insert("test", "b", json!(3)).await.is_err());
         assert!(store.get("test", "b").await.is_none());
         assert_eq!(store.get("test", "a").await, Some(json!(1)));

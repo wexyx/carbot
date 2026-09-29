@@ -1,7 +1,7 @@
 import {createServer} from 'node:http'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
-import {readFile} from 'node:fs/promises'
+import {readFile,mkdir} from 'node:fs/promises'
 import {join,resolve} from 'node:path'
 import assert from 'node:assert/strict'
 export const pause=ms=>new Promise(r=>setTimeout(r,ms))
@@ -20,7 +20,8 @@ export async function modelFixture(){
   return {env:{MODEL_PROVIDER:'compatible',MODEL_API:'chat',MODEL_BASE_URL:`http://127.0.0.1:${server.address().port}/v1`,MODEL_NAME:'fixture',MODEL_API_KEY:'fixture',ADMIN_AGENT_PROVIDER:'carbot'},close:()=>new Promise(r=>server.close(r))}
 }
 export async function start(dir,env={}){
-  const child=spawn(resolve('target/debug/agent-node'),[],{env:{...process.env,CARBOT_DATA_DIR:dir,BIND_ADDR:'127.0.0.1:0',ADMIN_TOKEN:'fixture-admin-token',AGENT_MODE:'agent',NODE_LINKS_JSON:'[]',OPENAI_API_KEY:'fixture',ANTHROPIC_API_KEY:'fixture',...env},stdio:['ignore','pipe','pipe']})
+  await mkdir(dir,{recursive:true})
+  const child=spawn(resolve('target/debug/agent-node'),[],{cwd:dir,env:{...process.env,CARBOT_DATA_DIR:dir,AGENT_WORKDIR:resolve('.'),BIND_ADDR:'127.0.0.1:0',ADMIN_TOKEN:'fixture-admin-token',AGENT_MODE:'agent',NODE_LINKS_JSON:'[]',OPENAI_API_KEY:'fixture',ANTHROPIC_API_KEY:'fixture',...env},stdio:['ignore','pipe','pipe']})
   let output='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b)
   for(let i=0;i<240;i++){
     const match=output.match(/(?:Server|Web REPL): (http:\/\/\S+)/)

@@ -42,6 +42,7 @@ def send(text):
 
 try:
     wait_for("CARBOT")
+    assert output.index("直接输入任务".encode()) < output.index(b"CARBOT"), "session metadata must follow the chat/input area"
     assert b"\x1b[?1000h" not in output, "native selection must be enabled by default"
     assert b"\x1b[38;5;14m" in output or b"\x1b[36m" in output, "missing cyan theme"
     send("/admin-c\t")
@@ -56,12 +57,12 @@ try:
     assert b"tty-secret-fixture" not in output, "secret appeared in terminal"
     send("\r")
     wait_for("配置已保存并生效")
-    settings = json.loads((pathlib.Path(directory) / "admin-agent.json").read_text())
+    settings = json.loads((pathlib.Path(directory) / "default-agent.json").read_text())
     assert settings["MODEL_API_KEY"] == "tty-secret-fixture"
     send("\x1b[A")
     wait_for("/admin-config")
     send("\x15/he\t\r")
-    wait_for("/allow-path")
+    wait_for("/help network")
     time.sleep(0.1)
     send("\x1b[200~你好\n第二行\x1b[201~")
     wait_for("第二行")

@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 fn protect_path(resolved: &Path) -> Result<(), String> {
-    if std::fs::canonicalize(env::var("CARBOT_DATA_DIR").unwrap_or_else(|_| ".carbot".into()))
+    if std::fs::canonicalize(crate::paths::data_dir())
         .ok()
         .is_some_and(|data| resolved.starts_with(data))
     {

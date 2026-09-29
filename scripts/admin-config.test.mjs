@@ -24,7 +24,7 @@ test('human configuration requires authentication, masks secrets and survives re
     const view=await request(server,path)
     assert.equal(view.configuration.has_api_key,true)
     assert.ok(!JSON.stringify(view).includes('secret-fixture'))
-    const file=join(dir,'admin-agent.json')
+    const file=join(dir,'default-agent.json')
     const saved=JSON.parse(await readFile(file,'utf8'))
     assert.equal(saved.MODEL_API_KEY,'secret-fixture')
     assert.equal((await stat(file)).mode&0o777,0o600)
@@ -49,7 +49,8 @@ test('noninteractive invalid startup fails clearly without waiting for stdin',as
   try{
     const result=spawnSync(resolve('target/debug/agent-node'),['--cli'],{env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,MODEL_PROVIDER:'invalid'},encoding:'utf8',timeout:5000})
     assert.equal(result.status,2)
-    assert.match(result.stderr,/No interactive terminal/)
+    assert.match(result.stderr,/请在终端运行 carbot 完成配置/)
+    assert.doesNotMatch(result.stderr,/AdminAgent/)
     assert.ok(!result.stdout.includes('Local data:'))
   }finally{await rm(dir,{recursive:true,force:true})}
 })
@@ -60,7 +61,7 @@ test('CLI can reconfigure after startup without sending settings to the model',a
     const result=spawnSync(resolve('target/debug/agent-node'),['--cli'],{env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,ADMIN_AGENT_PROVIDER:'mock'},input:'/admin-config\ncodex\n/usr/bin/false\n/exit\n',encoding:'utf8',timeout:10000})
     assert.equal(result.status,0,result.stderr)
     assert.match(result.stdout,/配置已保存并生效/)
-    const saved=JSON.parse(await readFile(join(dir,'admin-agent.json'),'utf8'))
+    const saved=JSON.parse(await readFile(join(dir,'default-agent.json'),'utf8'))
     assert.equal(saved.ADMIN_AGENT_PROVIDER,'codex')
     assert.equal(saved.CODEX_BIN,'/usr/bin/false')
   }finally{await rm(dir,{recursive:true,force:true})}

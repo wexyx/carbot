@@ -74,7 +74,14 @@ try:
     assert b"fixture-worker" in output
     send("\x1b[200~确认\x1b[201~\r")
     wait_for("已允许一次")
-    state = json.loads((pathlib.Path(directory) / "state.json").read_text())
+    state = {"collections": {}}
+    for line in (pathlib.Path(directory) / "state.jsonl").read_text().splitlines():
+        for change in json.loads(line)["changes"]:
+            rows = state["collections"].setdefault(change["collection"], {})
+            if change["deleted"]:
+                rows.pop(change["key"], None)
+            else:
+                rows[change["key"]] = change["value"]
     assert next(iter(state["collections"]["management_approvals"].values()))["status"] == "completed"
     # Human approval must not trigger an extra model request.
     time.sleep(1)

@@ -5,9 +5,7 @@ pub(crate) async fn serve(
     config: agent_runtime::config::RuntimeConfig,
     store: storage::Store,
 ) {
-    let data_dir = std::path::PathBuf::from(
-        std::env::var("CARBOT_DATA_DIR").unwrap_or_else(|_| ".carbot".into()),
-    );
+    let data_dir = agent_runtime::paths::data_dir();
     println!("Local data: {}", data_dir.display());
     agent_runtime::sandbox::initialize()
         .await
@@ -42,7 +40,7 @@ pub(crate) async fn serve(
     manager
         .configure(config)
         .await
-        .expect("configure AdminAgent");
+        .expect("configure default Agent");
     let web = manager.web().clone();
     let addr = crate::http::web_settings::preferred(&manager.core().state().store).await;
     match web.start(manager.clone(), &addr).await {

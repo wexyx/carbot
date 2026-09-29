@@ -12,7 +12,7 @@ test('CLI opens one persistent simple chat and enters management only by command
  const wait=async text=>{for(let i=0;i<250;i++){if(output.includes(text))return;await pause(20)}throw Error(output)}
  const close=async()=>{const ended=once(child,'exit');child.stdin.end('/exit\n');await ended;assert.equal(child.exitCode,0)}
  const launch=async()=>{
-  output='';child=spawn(resolve('target/debug/agent-node'),['--cli','--data-dir',dir,'--server-port','0'],{env:{PATH:process.env.PATH,ADMIN_AGENT_PROVIDER:'mock',NODE_LINKS_JSON:'[]'},stdio:['pipe','pipe','pipe']})
+  output='';child=spawn(resolve('target/debug/agent-node'),['--cli','--data-dir',dir,'--server-port','0'],{cwd:dir,env:{PATH:process.env.PATH,ADMIN_AGENT_PROVIDER:'mock',NODE_LINKS_JSON:'[]'},stdio:['pipe','pipe','pipe']})
   child.stdout.on('data',v=>output+=v);child.stderr.on('data',v=>output+=v)
   await wait('group>');return {url:output.match(/Server: (http:\/\/\S+)/)[1]}
  }

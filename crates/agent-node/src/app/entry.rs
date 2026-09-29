@@ -13,9 +13,7 @@ pub fn run() {
         .build()
         .expect("create runtime")
         .block_on(async {
-            let dir = std::path::PathBuf::from(
-                std::env::var_os("CARBOT_DATA_DIR").unwrap_or_else(|| ".carbot".into()),
-            );
+            let dir = agent_runtime::paths::data_dir();
             let store = match crate::storage::open(&dir).await {
                 Ok(store) => store,
                 Err(error) => {

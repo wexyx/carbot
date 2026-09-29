@@ -187,9 +187,7 @@ fn platform_command(
     if network {
         profile.push_str("(allow network*)");
     }
-    if let Ok(data) =
-        std::fs::canonicalize(std::env::var("CARBOT_DATA_DIR").unwrap_or_else(|_| ".carbot".into()))
-    {
+    if let Ok(data) = std::fs::canonicalize(crate::paths::data_dir()) {
         profile.push_str(&format!(
             "(deny file-read* file-write* (subpath {}))",
             quote(&data)
@@ -235,9 +233,7 @@ fn platform_command(
     for path in writes {
         command.arg("--bind").arg(path).arg(path);
     }
-    if let Ok(data) =
-        std::fs::canonicalize(std::env::var("CARBOT_DATA_DIR").unwrap_or_else(|_| ".carbot".into()))
-    {
+    if let Ok(data) = std::fs::canonicalize(crate::paths::data_dir()) {
         if writes.iter().any(|p| data.starts_with(p)) {
             command.arg("--tmpfs").arg(data);
         }

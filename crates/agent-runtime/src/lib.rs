@@ -5,6 +5,7 @@ mod errors;
 mod events;
 mod factory;
 mod managed_runtime;
+pub mod paths;
 mod providers;
 mod runtime;
 mod runtime_kind;

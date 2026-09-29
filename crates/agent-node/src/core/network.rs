@@ -26,7 +26,7 @@ impl Core {
             d.insert("projects",&project.to_string(),json!({"id":project,"space_id":space,"name":name,"created_at":crate::storage::now()}))
         }).await?;
         Ok(
-            json!({"project_id":project,"space_id":space,"name":name,"note":"Select the new project to start a separately scoped AdminAgent conversation."}),
+            json!({"project_id":project,"space_id":space,"name":name,"note":"选择新项目后可开始独立范围的管理会话。"}),
         )
     }
 }

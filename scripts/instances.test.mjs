@@ -1,3 +1,4 @@
+import {readState} from './state-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
@@ -9,13 +10,13 @@ import {modelFixture,pause} from './admin-fixture.mjs'
 test('CLI aliases isolate data, reject duplicate process, and allocate separate Web ports',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'carbot-instances-')),model=await modelFixture(),children=[]
  function launch(name,extra={}){
-   const child=spawn(resolve('target/debug/agent-node'),['--cli','--workdir',dir,'--name',name,'--web-port','0'],{env:{PATH:process.env.PATH,...model.env,...extra},stdio:['pipe','pipe','pipe']})
+   const child=spawn(resolve('target/debug/agent-node'),['--cli','--workdir',dir,'--name',name,'--web-port','0'],{env:{HOME:dir,PATH:process.env.PATH,...model.env,...extra},stdio:['pipe','pipe','pipe']})
    const item={child,output:'',name};children.push(item)
    child.stdout.on('data',b=>item.output+=b);child.stderr.on('data',b=>item.output+=b);return item
  }
  async function wait(item,text){for(let i=0;i<200;i++){if(item.output.includes(text))return;if(item.child.exitCode!==null)throw Error(item.output);await pause(20)}throw Error(item.output)}
  async function logs(name){
-   const root=join(dir,'.carbot_'+name),state=JSON.parse(await readFile(join(root,'state.json'),'utf8')),p=Object.keys(state.collections.projects)[0]
+   const root=join(dir,'.carbot_'+name),state=await readState(root),p=Object.keys(state.collections.projects)[0]
    const folder=join(root,'chats',p,Buffer.from('admin').toString('hex'))
    return (await Promise.all((await readdir(folder)).map(f=>readFile(join(folder,f),'utf8')))).join('').trim().split('\n').map(s=>JSON.parse(s))
  }

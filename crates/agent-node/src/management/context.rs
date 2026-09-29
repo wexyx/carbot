@@ -20,6 +20,6 @@ impl Context {
         self.project
     }
     pub(super) fn manager(&self) -> Result<std::sync::Arc<super::Manager>, String> {
-        self.manager.upgrade().ok_or("AdminAgent stopped".into())
+        self.manager.upgrade().ok_or("default Agent stopped".into())
     }
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 struct ServerStop {
     context: Arc<Context>,
 }
-#[tool(scope="management",name="server_stop",description="Stop the HTTP Server; business and AdminAgent continue running",parameters=json!({"type":"object","properties":{},"required":[],"additionalProperties":false}))]
+#[tool(scope="management",name="server_stop",description="Stop the HTTP Server; project Agents and the default Agent continue running",parameters=json!({"type":"object","properties":{},"required":[],"additionalProperties":false}))]
 impl ServerStop {
     fn new(context: Arc<ToolContext>) -> Option<Self> {
         Some(Self {

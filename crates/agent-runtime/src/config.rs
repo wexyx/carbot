@@ -5,12 +5,10 @@ pub use crate::providers::{
     claude::config::ClaudeConfig,
     codex::config::CodexConfig,
 };
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 pub(crate) fn workdir() -> PathBuf {
-    env::var("AGENT_WORKDIR")
-        .unwrap_or_else(|_| ".".into())
-        .into()
+    crate::paths::workdir()
 }
 
 #[derive(Clone)]

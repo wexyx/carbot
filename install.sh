@@ -34,7 +34,7 @@ if command -v sha256sum >/dev/null; then actual=$(sha256sum "$stage/$archive"); 
 tar -tzf "$stage/$archive" | awk '$0 !~ /^carbot\// || $0 ~ /(^|\/)\.\.(\/|$)/ {bad=1} END {exit bad}' || { echo 'Unsafe archive paths.' >&2; exit 1; }
 tar -tvzf "$stage/$archive" | awk 'substr($0,1,1)!="-" && substr($0,1,1)!="d" {bad=1} END {exit bad}' || { echo 'Archive links/devices are not allowed.' >&2; exit 1; }
 tar -xzf "$stage/$archive" -C "$stage"
-[[ -x $stage/carbot/bin/carbot && -x $stage/carbot/libexec/agent-node && -f $stage/carbot/web/index.html ]] || { echo 'Incomplete release bundle.' >&2; exit 1; }
+[[ -x $stage/carbot/bin/carbot && -x $stage/carbot/libexec/agent-node && -f $stage/carbot/web/index.html && -f $stage/carbot/skills/system/management/management-guide/SKILL.md ]] || { echo 'Incomplete release bundle.' >&2; exit 1; }
 mkdir -p "$prefix/share/carbot/releases" "$prefix/bin"
 destination=$(mktemp -d "$prefix/share/carbot/releases/$version-$target.XXXXXX")
 cp -R "$stage/carbot/." "$destination/"

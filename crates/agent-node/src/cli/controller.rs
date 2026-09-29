@@ -261,7 +261,7 @@ impl Controller {
                 }
                 action.navigate = true;
                 action.replay = true;
-                action.text = "已恢复最近的聊天记录；原始日志与上下文没有被删除。".into();
+                action.text = "已恢复最近的聊天记录".into();
                 return Ok(action);
             }
             Command::Exit => {

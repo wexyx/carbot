@@ -11,7 +11,7 @@ carbot 终端 ──┘                                               │
 
 两套能力包复用 AgentRuntime、Tool trait、Inventory、SkillCatalog 和事件持久化，不复制 Harness 或 Tool 调用逻辑。AdminAgent 支持 Carbot、Codex、Claude 和测试用 Mock。CLI Provider 通过共享 ToolRuntime 的 JSON 工具调用循环调用同一套 management 注册表，不另建管理协议。运行目录是独立临时目录，不是业务工作目录；工厂固定 Codex 为 read-only、Claude 为 plan，外层仍使用原生目录沙箱。CLI 的认证文件读取仍需要目录策略授权，或预先提供对应 CLI 的环境认证信息。
 
-缺少或无效配置时，终端启动自动进入配置向导；运行后 `/admin-config` 和 Web 的「AdminAgent 配置」可切换 Provider。配置保存在数据目录下的 admin-agent.json（0600，明文密钥），环境变量优先。基础配置只允许用户操作，不注册为模型工具。切换时拒绝存在活跃管理任务的情况，保存成功后新消息使用新配置；历史不删除。无终端时配置错误返回非零退出码。
+缺少或无效配置时，终端启动自动进入配置向导；运行后 `/admin-config` 和 Web 的「AdminAgent 配置」可切换 Provider。配置保存在数据目录下的 default-agent.json（0600，明文密钥），环境变量优先。基础配置只允许用户操作，不注册为模型工具。切换时拒绝存在活跃管理任务的情况，保存成功后新消息使用新配置；历史不删除。无终端时配置错误返回非零退出码。
 
 ## 文件职责
 

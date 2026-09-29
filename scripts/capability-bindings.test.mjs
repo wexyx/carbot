@@ -1,3 +1,4 @@
+import {readState} from './state-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,rm,readFile} from 'node:fs/promises'
@@ -55,7 +56,7 @@ test('shared definitions resolve all four binding layers, inherit, persist and i
   assert.equal((await groupRow(b.key)).resolution.enabled,true)
   const run=await request(server,'/v1/repl/'+p+'/groups/'+a.key+'/messages',{content:'Check project context'})
   await history(server,p,run.id)
-  const stored=JSON.parse(await readFile(join(dir,'state.json'),'utf8'))
+  const stored=await readState(dir)
   const records=Object.values(stored.collections.runs)
   const workerRun=records.find(r=>r.client_id==='worker'&&r.content?.includes('Check project context'))
   assert.ok(workerRun,'local worker ran')

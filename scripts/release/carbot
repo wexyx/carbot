@@ -7,6 +7,7 @@ while [[ -L "$launcher" ]]; do
   [[ $launcher == /* ]] || launcher="$parent/$launcher"
 done
 bundle=$(cd -P -- "$(dirname -- "$launcher")/.." && pwd)
+export CARBOT_SYSTEM_SKILLS_DIR=${CARBOT_SYSTEM_SKILLS_DIR:-$bundle/skills/system}
 export WEB_CONFIG_DIR=${WEB_CONFIG_DIR:-$bundle/web}
 if [[ ${1:-} == --headless ]]; then
   shift

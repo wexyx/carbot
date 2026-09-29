@@ -1,3 +1,4 @@
+import {readState,changeState} from './state-fixture.mjs'
 // Actual native Python process; model and Codex protocol are local fixtures.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -31,9 +32,9 @@ console.log(JSON.stringify({type:'item.completed',item:{id:'answer',type:'agent_
     // A trusted deployment fixture grants Python while the process is stopped.
     // This does not expose an AI tool or an HTTP management endpoint for permission escalation.
     await stop(agent)
-    const file=join(dir,'data/state.json'),snapshot=JSON.parse(await readFile(file,'utf8'))
+    const snapshot=await readState(join(dir,'data'))
     snapshot.collections.skills[`${project}:calculator`].skill.allow_python=true
-    await writeFile(file,JSON.stringify(snapshot),{mode:0o600})
+    await changeState(join(dir,'data'),'skills',`${project}:calculator`,snapshot.collections.skills[`${project}:calculator`])
     agent=await start(join(dir,'data'),env)
     const result=await act(agent,project,[{name:'agent_start',input:{client_id:'coder',role:'worker',provider:'codex'}},{name:'group_create',input:{name:'Calculator',policy:policy('coder')}}])
     const group=result.outputs[1];assert.ok(group.key,JSON.stringify(result.outputs))
@@ -43,7 +44,7 @@ console.log(JSON.stringify({type:'item.completed',item:{id:'answer',type:'agent_
     const disabled=await act(agent,project,[{name:'capability_skill_save',input:{scope:'business',expected_version:1,definition:{...skill,enabled:false}}}])
     assert.equal(disabled.outputs[0].revision,2)
     await stop(agent)
-    const persisted=JSON.parse(await readFile(file,'utf8'))
+    const persisted=await readState(join(dir,'data'))
     assert.ok(Object.values(persisted.collections.runs).some(r=>r.skills?.[0]?.id==='calculator'))
   }finally{await stop(agent);await model.close();await rm(dir,{recursive:true,force:true})}
 })

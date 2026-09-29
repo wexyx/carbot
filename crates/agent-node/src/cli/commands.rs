@@ -27,23 +27,32 @@ pub(super) fn parse(line: &str) -> Result<Command, String> {
     if let Some(command) = super::workbench_commands::parse(head, tail)? {
         return Ok(command);
     }
-    Ok(match head{
-        "add-agent"|"remove-agent"|"agent"|"group"=>Command::Group(line.into()),
-        "members"=>Command::Group("/agents".into()),
-        "manage"=>Command::Admin,
-        "history"=>Command::History(tail.trim().into()),
-        "tools"=>Command::Tools(if tail.trim().is_empty(){None}else{Some(tail.trim().parse().map_err(|_|"usage: /tools [number]")?)}),
-        "help"=>Command::Help(tail.trim().into()), "exit"=>Command::Exit,
-        "namespace"=>Command::Project((!tail.trim().is_empty()).then(||tail.trim().into())),
-        "allowlist"=>Command::Allowlist(tail.trim().into()),
-        "permissions"=>Command::Permissions(tail.trim().into()),
-        "new"=>Command::New,"resume"=>Command::Resume(tail.trim().into()),
-        "chat"=>Command::Chat(tail.trim().into()),"admin"=>Command::Admin,
-        "agent-config"|"admin-config"=>Command::AdminConfig,
-        "interrupt"=>Command::Interrupt,
-        "approve"|"deny"=>Command::Confirm(tail.trim().into(),head=="approve"),
-        "allow-path"|"deny-path"=>Command::WorkspaceConfirm(tail.trim().into(),head=="allow-path"),
-        _=>return Err("Only conversation navigation and human confirmations are commands. Tell AdminAgent what you want to manage.".into()),
+    Ok(match head {
+        "add-agent" | "remove-agent" | "agent" | "group" => Command::Group(line.into()),
+        "members" => Command::Group("/agents".into()),
+        "manage" => Command::Admin,
+        "history" => Command::History(tail.trim().into()),
+        "tools" => Command::Tools(if tail.trim().is_empty() {
+            None
+        } else {
+            Some(tail.trim().parse().map_err(|_| "usage: /tools [number]")?)
+        }),
+        "help" => Command::Help(tail.trim().into()),
+        "exit" => Command::Exit,
+        "namespace" => Command::Project((!tail.trim().is_empty()).then(|| tail.trim().into())),
+        "allowlist" => Command::Allowlist(tail.trim().into()),
+        "permissions" => Command::Permissions(tail.trim().into()),
+        "new" => Command::New,
+        "resume" => Command::Resume(tail.trim().into()),
+        "chat" => Command::Chat(tail.trim().into()),
+        "admin" => Command::Admin,
+        "agent-config" | "admin-config" => Command::AdminConfig,
+        "interrupt" => Command::Interrupt,
+        "approve" | "deny" => Command::Confirm(tail.trim().into(), head == "approve"),
+        "allow-path" | "deny-path" => {
+            Command::WorkspaceConfirm(tail.trim().into(), head == "allow-path")
+        }
+        _ => return Err("仅支持会话导航与人工确认命令；管理操作可以直接告诉默认 Agent。".into()),
     })
 }
 pub(super) use super::help::TEXT as HELP;

@@ -21,8 +21,13 @@ impl Manager {
                 json!({"definition":row["skill"],"version":row["revision"],"readonly":false})
             });
         }
-        if scope == "management" {
-            rows.push(json!({"definition":{"id":"management-guide","description":"内置管理规则","enabled":true,"allow_python":false,"files":{"SKILL.md":include_str!("management-guide.md")}},"version":0,"readonly":true}));
+        for resource in crate::capabilities::Library::new(self.core().state().store.clone())
+            .resources(scope, "skill")
+            .await?
+        {
+            if resource.readonly {
+                rows.push(json!({"definition":resource.definition,"version":resource.version,"readonly":true}));
+            }
         }
         rows.sort_by_key(|r| {
             r["definition"]["id"]

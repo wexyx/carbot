@@ -94,7 +94,7 @@ impl Presentation {
                 let prefix = if self.streaming {
                     String::new()
                 } else {
-                    format!("\n{label}: ")
+                    format!("\n│ {label}\n")
                 };
                 self.streaming = true;
                 self.text.push_str(text);
@@ -117,7 +117,7 @@ impl Presentation {
                 let output = if self.text.ends_with(text) && self.streaming {
                     String::new()
                 } else {
-                    format!("\n{label}: {text}\n")
+                    format!("\n│ {label}\n{text}\n")
                 };
                 self.streaming = false;
                 self.text.clear();
@@ -127,7 +127,7 @@ impl Presentation {
                 let answer = if text.is_empty() || self.text.ends_with(text) {
                     String::new()
                 } else {
-                    format!("\nAgent: {text}")
+                    format!("\n│ {label}\n{text}")
                 };
                 self.text.clear();
                 self.streaming = false;
@@ -154,6 +154,13 @@ impl Presentation {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn speaker_is_a_separate_header_for_streamed_and_complete_messages() {
+        let mut view = Presentation::default();
+        assert_eq!(view.render(&json!({"type":"agent.delta","agent":"default","invocation_id":"one","content":"你好"})), "\n│ 默认 Agent\n你好");
+        assert_eq!(view.render(&json!({"type":"agent.delta","agent":"default","invocation_id":"one","content":"。"})), "。");
+        assert_eq!(view.render(&json!({"type":"agent.message","agent":"reviewer","invocation_id":"two","content":"检查完成"})), "\n│ reviewer\n检查完成\n");
+    }
     #[test]
     fn streams_fragments_once_and_does_not_dump_internal_events() {
         let mut view = Presentation::default();

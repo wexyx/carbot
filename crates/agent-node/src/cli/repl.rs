@@ -50,7 +50,7 @@ pub(crate) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                     let (p, id, b) = controller.view();
                     watcher = output::watch(manager.clone(), p, id, b, false).await;
                     match result {
-                        Ok(()) => println!("AdminAgent 配置已保存并生效；环境变量在重启时仍优先。"),
+                        Ok(()) => println!("默认 Agent 配置已保存并生效；环境变量在重启时仍优先。"),
                         Err(e) => eprintln!("error: {e}"),
                     }
                 } else {

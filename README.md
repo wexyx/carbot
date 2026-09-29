@@ -47,7 +47,9 @@ carbot --outside-access ask
 - 自动尝试启动 Server，第一次默认 `127.0.0.1:8787`，以后复用该实例的端口。只有显式指定 `--server-port 0` 才随机分配。
 - 端口被占用时 CLI 继续运行并提示；同一数据目录已运行时拒绝重复启动。
 
-默认工作目录为启动时的当前目录；`--workdir` 可以指定其它目录。实例数据默认为工作目录中的 `.carbot`，别名对应 `.carbot_dev`；也可用 `--data-dir /absolute/path` 指定，不能同时使用 `--name`。
+默认工作目录为用户主目录（`~`）；`--workdir` 或 `AGENT_WORKDIR` 可以指定其它目录。实例数据默认为 `~/.carbot`，`--name dev` 对应 `~/.carbot_dev`，不受工作目录影响；也可用 `--data-dir /absolute/path` 或 `CARBOT_DATA_DIR` 指定。命令行参数优先于环境变量，`--data-dir` 不能同时使用 `--name`。
+
+旧版启动目录中的 `.carbot*` 不会自动搬迁或删除。继续使用旧配置和聊天记录时，请显式传入 `--data-dir /旧路径/.carbot`。默认以主目录作为文件操作范围；需要更小的隔离范围时，请指定项目工作目录。
 
 预编译安装版只启动 Server：`carbot --headless`。无交互启动需要先完成模型配置，或设置环境变量。源码版对应 `./agent-node start`。
 
@@ -185,13 +187,13 @@ CLI 启动不自动打印历史，使用 `/history` 恢复。鼠标保留终端�
 
 配置、凭据、策略使用本地状态文件；聊天按 session / 群组 ID，以小时分片的 JSONL 逐行追加，不整份聊天重写。目录锁防止多进程写同一个实例。备份前停止实例，再备份完整数据目录。
 
-`admin-agent.json` 保存默认运行器/模型配置；密钥本地明文保存，Unix 文件权限为 0600。不要提交、公开或同步活动实例目录。
+`default-agent.json` 保存默认运行器/模型配置；密钥本地明文保存，Unix 文件权限为 0600。不要提交、公开或同步活动实例目录。
 
 无需 AdminToken。管理路由仅允许实际回环连接并校验 Host/Origin；公网仅用于 A2A。远程管理使用 SSH 本地端口转发，不要把管理路由通过反向代理开放到公网。
 
 项目可覆盖工作目录和目录外访问策略（deny / ask），不能扩大宿主启动权限。macOS 使用原生目录隔离，Linux 使用 bubblewrap；不能把仅改变 cwd 当作安全边界。网络按沙箱策略允许，执行权限仍需审批。
 
-模型环境变量：`MODEL_PROVIDER`、`MODEL_NAME`、`MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_API`。显式环境变量在重启时优先于保存配置。源码启动脚本可读取 `.agent.env`，但它是数据文件，不执行 Shell 内容；安装版建议使用交互向导或显式环境变量。
+模型环境变量：`MODEL_PROVIDER`、`MODEL_NAME`、`MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_API`。显式环境变量在重启时优先于保存配置。源码和安装版统一读取 `<实例目录>/.agent.env`（默认 `~/.carbot/.agent.env`）；若运行目录存在 `.agent.env`，其同名配置覆盖实例文件。启动参数优先于显式环境变量，显式环境变量优先于文件。配置文件仅支持字面量 `KEY=value`，不执行 Shell 或变量替换；相对目录基于配置文件所在目录。`--name` / `--data-dir` 先选择实例，再读取配置；实例文件不能通过 `CARBOT_DATA_DIR` 重定向自身。运行目录配置中的 `CARBOT_DATA_DIR` 可以选择实例，仍受显式参数/环境变量覆盖。交互保存的模型配置 `default-agent.json` 优先于文件中的模型默认值，避免旧模板覆盖已保存的配置。
 
 ## 源码开发
 
@@ -234,3 +236,11 @@ bash scripts/package-release.sh aarch64-apple-darwin
 工作流尚需在 GitHub 实际跑通各平台后才能确认跨平台发布质量。不要把本机通过的构建当成所有系统均已验证。
 
 GitHub Runner 平台标签参考：[官方说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
+
+### 本地持久化与内置 Skill
+
+聊天记录写入按小时分片的 JSONL；实例状态写入 `state.jsonl`，一行对应一次事务，仅包含变化的记录，不再在每次操作时重写整份 `state.json`。启动时回放日志，兼容旧 `state.json` 基线；旧文件请保留，不能单独删除。JSONL 中间损坏会拒绝启动，崩溃留下的未完成末行会恢复到最后一次完整提交。日志尚不自动压缩归档，文件会随使用增长。
+
+内置 Skill 源码在 `skills/system/{business,management}/<skill>/`，每个目录包含 `SKILL.md`、`skill.json`（描述和默认启用状态），可附带 `scripts/`、`references/`。`scripts/package-release.sh` 自动将其放入发布包 `skills/system`；`install.sh` 随程序复制到版本目录，启动器通过 `CARBOT_SYSTEM_SKILLS_DIR` 定位。也可显式指定这个环境变量覆盖来源。
+
+系统 Skill 在工具库中只读，可通过已有生效范围规则启用/禁用；安装升级不写入用户 Skill 或实例数据。内置依赖安装、浏览器自动化、OCR Skill 只提供按需工作流，不会在安装 Carbot 时自动安装 Homebrew、浏览器或 Tesseract，也不会绕过执行确认。

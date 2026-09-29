@@ -10,9 +10,7 @@ impl Manager {
     pub(crate) async fn tool_catalog(self: &Arc<Self>, project: Uuid) -> Result<Value, String> {
         self.core().project(project).await?;
         let mut management = self.base_registry(project).await?.definitions();
-        let root = std::env::var_os("AGENT_WORKDIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
+        let root = agent_runtime::paths::workdir();
         let context = ToolContext::new(
             Some(root),
             agent_runtime::skills::SkillCatalog::new(vec![

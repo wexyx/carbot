@@ -76,7 +76,10 @@ mod tests {
     use super::*;
     #[test]
     fn semantic_colors_and_no_color_mode() {
+        assert_eq!(Theme::color("│ 默认 Agent"), Some(Color::DarkGrey));
+        assert_eq!(Theme::color("普通回复正文"), None);
         for text in [
+            "│ 默认 Agent",
             "你：hi",
             "[调用工具：group_list]",
             "[完成]",

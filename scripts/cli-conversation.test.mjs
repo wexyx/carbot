@@ -12,7 +12,7 @@ test('CLI renders a Carbot tool roundtrip as conversation and restores its promp
   const model=await modelFixture()
   let child,output=''
   try{
-    child=spawn(resolve('target/debug/agent-node'),['--cli'],{env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,...model.env},stdio:['pipe','pipe','pipe']})
+    child=spawn(resolve('target/debug/agent-node'),['--cli'],{cwd:dir,env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,...model.env},stdio:['pipe','pipe','pipe']})
     child.stdout.on('data',data=>output+=data)
     child.stderr.on('data',data=>output+=data)
     const wait=async text=>{

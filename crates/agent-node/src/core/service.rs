@@ -125,7 +125,7 @@ impl Core {
             .await
             .contains_key(&(project, id.into()))
         {
-            return Err("Agent 正在运行。先向 AdminAgent 请求停止并完成人工确认，再执行配置命令；不会自动中断任务。".into());
+            return Err("Agent 正在运行。先向 默认 Agent 请求停止并完成人工确认，再执行配置命令；不会自动中断任务。".into());
         }
         let key = format!("{project}:{id}");
         self.state

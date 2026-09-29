@@ -19,7 +19,7 @@ impl Core {
             serde_json::from_value(input["definition"].clone()).map_err(|e| e.to_string())?;
         skill.validate()?;
         if skill.allow_python() {
-            return Err("AdminAgent cannot grant script execution permissions".into());
+            return Err("default Agent cannot grant script execution permissions".into());
         }
         let revision = input["expected_version"]
             .as_u64()

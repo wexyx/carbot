@@ -95,7 +95,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                                         if line.trim()=="/cancel" {wizard=None;status="配置已取消。".into();continue;}
                                         match config.submit(line) {
                                             Ok(Some(settings))=>match manager.reconfigure(settings).await {
-                                                Ok(())=>{wizard=None;session_info=controller.session_info().await;status="AdminAgent 配置已保存并生效。".into();transcript.push_str("\n[AdminAgent 配置已更新]\n");},
+                                                Ok(())=>{wizard=None;session_info=controller.session_info().await;status="默认 Agent 配置已保存并生效。".into();},
                                                 Err(e)=>status=e,
                                             },
                                             Ok(None)=>status=config.prompt(),Err(e)=>status=e,
@@ -130,15 +130,15 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                             if action.configure{match Settings::load(){Ok(settings)=>{wizard=Some(Wizard::new(settings));status=wizard.as_ref().unwrap().prompt();},Err(e)=>status=e};continue;}
                             if action.navigate{watcher.abort();let(p,id,b)=controller.view();(updates,watcher)=output::subscribe(manager.clone(),p,id,b,action.replay).await;presentation=Presentation::default();tools=Default::default();transcript.clear();busy=false;pending_echo=None;}
                             if action.sent {if busy{status="等待模型响应…".into();}}
-                            else {status=action.text.clone();transcript.push_str(&format!("{}\n",action.text));}
+                            else if action.navigate {status=action.text;}
+                            else {status="就绪".into();if !action.text.is_empty(){transcript.push_str(&format!("{}\n",action.text));}}
                         },
-                        Err(e)=>{pending_echo=None;busy=false;status=e.clone();transcript.push_str(&format!("\n错误：{e}\n"));},
+                        Err(e)=>{pending_echo=None;busy=false;status="操作失败，可修改后重试。".into();transcript.push_str(&format!("\n错误：{e}\n"));},
                     }
                 },
                 Some(result)=decisions_rx.recv()=>{
                     dirty=true;decision_job=None;
                     status=match result{Ok(text)=>text,Err(error)=>{dialog.show();format!("权限处理失败：{error}")}};
-                    transcript.push_str(&format!("\n{status}\n"));
                 },
                 Some(update)=updates.recv()=>{
                     dirty=true;

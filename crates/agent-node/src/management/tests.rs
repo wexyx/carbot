@@ -76,7 +76,9 @@ async fn capability_packages_are_disjoint_and_skills_are_scoped() {
         crate::skills::snapshot(m.core().state(), p)
             .await
             .unwrap()
-            .is_empty()
+            .definitions()
+            .iter()
+            .all(|skill| skill.id() != "custom")
     );
 }
 #[tokio::test]

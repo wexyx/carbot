@@ -10,14 +10,14 @@ pub(crate) async fn startup() -> Result<RuntimeConfig, String> {
         Err(error) => {
             if !std::io::stdin().is_terminal() {
                 return Err(format!(
-                    "AdminAgent configuration: {error}. No interactive terminal; run ./carbot in a terminal to configure, or set ADMIN_AGENT_PROVIDER / MODEL_* in the environment."
+                    "默认 Agent 配置无效：{error}。请在终端运行 carbot 完成配置，或设置 ADMIN_AGENT_PROVIDER / MODEL_* 环境变量。"
                 ));
             }
-            println!("AdminAgent 配置未完成：{error}。进入配置向导。");
+            println!("请先配置默认 Agent：{error}。进入配置向导。");
             let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
             let settings = edit(settings, &mut lines).await?;
             settings.save()?;
-            println!("AdminAgent 配置已保存，继续启动。");
+            println!("默认 Agent 配置已保存，继续启动。");
             settings.runtime()
         }
     }
@@ -28,7 +28,7 @@ pub(crate) async fn edit<R: AsyncBufRead + Unpin>(
     lines: &mut Lines<R>,
 ) -> Result<Settings, String> {
     println!(
-        "AdminAgent 配置：回车保留默认值，- 清空，/cancel 取消。配置保存在 CARBOT_DATA_DIR/admin-agent.json（API Key 为明文，文件权限 0600）。"
+        "默认 Agent 配置：回车保留默认值，- 清空，/cancel 取消。配置保存在 CARBOT_DATA_DIR/default-agent.json（API Key 为明文，文件权限 0600）。"
     );
     let mut wizard = super::Wizard::new(settings);
     loop {

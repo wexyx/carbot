@@ -61,11 +61,11 @@ impl Library {
                     origin: Some(json!({"project":project})),
                 });
             }
-            if scope == "management" {
-                result.push(Resource{id:"builtin:management:skill:management-guide".into(),kind:kind.into(),scope:scope.into(),
-                    definition:json!({"id":"management-guide","description":"内置管理规则","enabled":true,"allow_python":false,"files":{"SKILL.md":include_str!("../management/management-guide.md")}}),
-                    version:0,readonly:true,origin:None});
+            let system = super::system_skills::resources(scope).await?;
+            if scope == "management" && !system.iter().any(|r| r.name() == "management-guide") {
+                result.push(super::system_skills::fallback_management_guide());
             }
+            result.extend(system);
         } else {
             for row in self.store.list("tool_policies").await {
                 if row["scope"] != scope {

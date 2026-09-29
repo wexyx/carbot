@@ -1,3 +1,4 @@
+import {readState} from './state-fixture.mjs'
 // Real process + model tool roundtrip + HTTP + durable files. No external model calls.
 import test from 'node:test'
 import {randomUUID,randomBytes} from 'node:crypto'
@@ -34,7 +35,7 @@ test('AdminAgent tools persist groups, conversations and enrollment across resta
     assert.equal((await fetch(server.url+'/v1/client/connect',{headers:{'x-agent-ak':keys.ak,'x-agent-sk':'wrong'}})).status,401)
     assert.equal((await fetch(server.url+'/v1/carbot/control',{method:'POST'})).status,404)
     await stop(server)
-    const snapshot=JSON.parse(await readFile(join(dir,'state.json'),'utf8'))
+    const snapshot=await readState(dir)
     assert.equal(snapshot.collections.history,undefined)
     assert.equal(snapshot.collections.runs[next.id].prompt,"Continue task")
     assert.ok(snapshot.collections.credentials[keys.ak])
@@ -64,7 +65,7 @@ else {if(!prompt.includes('ORIGINAL_REQUEST')||!prompt.includes('checkpoint: ins
     const next=await request(server,`/v1/repl/${project}/groups/${group.key}/messages`,{content:'REVISED_REQUEST',previous_session_id:first.id})
     await history(server,project,next.id)
     await stop(server)
-    const snapshot=JSON.parse(await readFile(join(dir,'data/state.json'),'utf8'))
+    const snapshot=await readState(join(dir,'data'))
     assert.equal(snapshot.collections.runs[next.id].prompt,'REVISED_REQUEST')
     const chatDir=join(dir,'data/chats',project,Buffer.from('group:'+group.key).toString('hex'))
     const log=(await Promise.all((await readdir(chatDir)).filter(f=>f.endsWith('.jsonl')).map(f=>readFile(join(chatDir,f),'utf8')))).join('')

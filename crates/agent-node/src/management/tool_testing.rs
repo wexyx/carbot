@@ -44,7 +44,7 @@ impl Manager {
                         .workdir()
                         .map(std::path::Path::to_path_buf)
                         .or_else(|| std::env::var_os("AGENT_WORKDIR").map(std::path::PathBuf::from))
-                        .unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
+                        .unwrap_or_else(agent_runtime::paths::workdir);
                     ToolFactory::create(
                         ToolContext::new(
                             Some(root),

@@ -1,3 +1,4 @@
+import {readState} from './state-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
@@ -14,7 +15,7 @@ test('CLI starts clean, history replays on request, and Web reuses the saved por
  }
  const wait=async text=>{for(let i=0;i<200;i++){if(item.output.includes(text))return;if(item.child.exitCode!==null)throw Error(item.output);await pause(20)}throw Error('missing '+text+': '+item.output)}
  const exit=async()=>{const done=once(item.child,'exit');item.child.stdin.end('/exit\n');await done;assert.equal(item.child.exitCode,0)}
- const web=async()=>{item.output='';item.child.stdin.write('启动 Web TEST_PLAN:[{"name":"server_start","input":{}}]\n');await wait('[完成]');const state=JSON.parse(await readFile(join(dir,'state.json'),'utf8'));return state.collections.instance_settings.web.address}
+ const web=async()=>{item.output='';item.child.stdin.write('启动 Web TEST_PLAN:[{"name":"server_start","input":{}}]\n');await wait('[完成]');const state=await readState(dir);return state.collections.instance_settings.web.address}
  try{
   item=launch(['--web-port','0']);await wait('group> ');item.child.stdin.write('/manage\n');await wait('admin> ')
   item.output='';item.child.stdin.write('persisted-history-marker TEST_PLAN:[]\n');await wait('[完成]')

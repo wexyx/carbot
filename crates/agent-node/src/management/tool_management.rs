@@ -73,9 +73,7 @@ impl Manager {
             return Err("external commands belong to business Agents only".into());
         }
         if scope == "business" {
-            let root = std::env::var_os("AGENT_WORKDIR")
-                .map(std::path::PathBuf::from)
-                .unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
+            let root = agent_runtime::paths::workdir();
             ToolFactory::create(
                 ToolContext::new(
                     Some(root),

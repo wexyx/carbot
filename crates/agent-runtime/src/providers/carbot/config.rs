@@ -90,8 +90,12 @@ impl HarnessConfig {
             .unwrap_or_else(|| "4096".into())
             .parse()
             .map_err(|_| "invalid HARNESS_MAX_TOKENS")?;
-        let root = std::fs::canonicalize(get("AGENT_WORKDIR").unwrap_or_else(|| ".".into()))
-            .map_err(|_| "AGENT_WORKDIR does not exist")?;
+        let root = std::fs::canonicalize(
+            get("AGENT_WORKDIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(crate::paths::user_home),
+        )
+        .map_err(|_| "AGENT_WORKDIR does not exist")?;
         context.input_limit(max_tokens)?;
         Ok(Self {
             context,

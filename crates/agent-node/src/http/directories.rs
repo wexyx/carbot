@@ -21,11 +21,7 @@ pub(crate) async fn list(
 }
 
 async fn browse(path: Option<PathBuf>) -> std::io::Result<Value> {
-    let path = path.unwrap_or_else(|| {
-        std::env::var_os("AGENT_WORKDIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."))
-    });
+    let path = path.unwrap_or_else(agent_runtime::paths::workdir);
     let path = tokio::fs::canonicalize(path).await?;
     let mut entries = tokio::fs::read_dir(&path).await?;
     let mut directories = Vec::new();

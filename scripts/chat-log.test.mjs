@@ -1,3 +1,4 @@
+import {readState} from './state-fixture.mjs'
 import test from 'node:test'
 import {request as httpRequest} from 'node:http'
 import assert from 'node:assert/strict'
@@ -38,7 +39,7 @@ test('one admin chat appends JSONL, paginates, and migrates legacy snapshots wit
     const raw=await readFile(join(dir,'chats',p,Buffer.from('admin').toString('hex'),logs.files[0].name),'utf8')
     assert.deepEqual(raw.trim().split('\n').map(s=>JSON.parse(s)),logs.events)
     await stop(server)
-    const state=JSON.parse(await readFile(join(dir,'state.json'),'utf8'))
+    const state=await readState(dir)
     assert.equal(state.collections.management_sessions[p].events,undefined)
     assert.equal(state.collections.history,undefined)
     const legacy=join(dir,'legacy');await mkdir(legacy)

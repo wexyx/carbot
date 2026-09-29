@@ -2,10 +2,8 @@ use std::path::PathBuf;
 /// Parse before the Tokio runtime is created; startup policy is immutable thereafter.
 pub(crate) fn configure() -> Result<Option<bool>, String> {
     let mut args = std::env::args().skip(1);
-    let mut workdir = std::env::var_os("AGENT_WORKDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| ".".into());
-    let mut outside = std::env::var("AGENT_OUTSIDE_ACCESS").unwrap_or_else(|_| "deny".into());
+    let mut workdir = None;
+    let mut outside = None;
     let mut interactive = false;
     let mut name = None;
     let mut data_dir = None;
@@ -27,9 +25,13 @@ pub(crate) fn configure() -> Result<Option<bool>, String> {
                         .map_err(|_| "invalid web port; expected 0..65535")?,
                 )
             }
-            "--workdir" => workdir = args.next().ok_or("--workdir requires a directory")?.into(),
+            "--workdir" => {
+                workdir = Some(PathBuf::from(
+                    args.next().ok_or("--workdir requires a directory")?,
+                ))
+            }
             "--outside-access" => {
-                outside = args.next().ok_or("--outside-access requires ask or deny")?
+                outside = Some(args.next().ok_or("--outside-access requires ask or deny")?)
             }
             "--help" | "-h" => {
                 println!(
@@ -39,15 +41,6 @@ pub(crate) fn configure() -> Result<Option<bool>, String> {
             }
             _ => return Err(format!("unknown startup option: {arg}")),
         }
-    }
-    if !matches!(outside.as_str(), "ask" | "deny") {
-        return Err("outside-access must be ask or deny".into());
-    }
-    let root = workdir
-        .canonicalize()
-        .map_err(|e| format!("invalid workdir: {e}"))?;
-    if !root.is_dir() {
-        return Err("workdir must be a directory".into());
     }
     if let Some(name) = &name {
         if name.is_empty()
@@ -63,13 +56,25 @@ pub(crate) fn configure() -> Result<Option<bool>, String> {
         if data_dir.is_some() {
             return Err("choose --name or --data-dir, not both".into());
         }
-        data_dir = Some(root.join(format!(".carbot_{name}")));
+        data_dir = Some(agent_runtime::paths::user_home().join(format!(".carbot_{name}")));
+    }
+    super::startup_environment::StartupEnvironment::load(data_dir)?;
+    let outside = outside
+        .unwrap_or_else(|| std::env::var("AGENT_OUTSIDE_ACCESS").unwrap_or_else(|_| "deny".into()));
+    if !matches!(outside.as_str(), "ask" | "deny") {
+        return Err("outside-access must be ask or deny".into());
+    }
+    let root = super::startup_environment::absolute(
+        &super::startup_environment::StartupEnvironment::launch_dir()?,
+        workdir.unwrap_or_else(agent_runtime::paths::workdir),
+    )
+    .canonicalize()
+    .map_err(|e| format!("invalid workdir: {e}"))?;
+    if !root.is_dir() {
+        return Err("workdir must be a directory".into());
     }
     // No application threads exist at this startup-only call site.
     unsafe {
-        if let Some(dir) = data_dir {
-            std::env::set_var("CARBOT_DATA_DIR", dir);
-        }
         if let Some(name) = name {
             std::env::set_var("CARBOT_INSTANCE", name);
         }

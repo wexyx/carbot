@@ -1,3 +1,8 @@
+---
+name: management-guide
+description: Manage Carbot Agents, projects, collaboration policies and peer connections using management tools.
+---
+
 # Management capability package
 
 You manage this project's agents and A2A groups. You do not perform business work yourself.
