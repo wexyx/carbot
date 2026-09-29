@@ -1,3 +1,6 @@
 [workspace]
 members = ["crates/agent-node", "crates/agent-protocol", "crates/agent-runtime", "crates/agent-tool-macros"]
 resolver = "2"
+
+[workspace.package]
+license = "MIT"

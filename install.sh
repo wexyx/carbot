@@ -40,6 +40,36 @@ destination=$(mktemp -d "$prefix/share/carbot/releases/$version-$target.XXXXXX")
 cp -R "$stage/carbot/." "$destination/"
 if [[ -e $prefix/bin/carbot && ! -L $prefix/bin/carbot ]]; then echo "Refusing to overwrite $prefix/bin/carbot; bundle saved at $destination" >&2; exit 1; fi
 ln -sfn "$destination/bin/carbot" "$prefix/bin/carbot"
-printf 'Installed %s to %s\nRun: %s/bin/carbot\n' "$version" "$destination" "$prefix"
-case ":$PATH:" in *":$prefix/bin:"*) ;; *) printf 'Add this directory to PATH: %s/bin\n' "$prefix";; esac
+# Install command discovery as part of installation, without replacing shell settings.
+# A child script cannot change its parent shell; these entries apply to new terminals.
+printf -v quoted_bin '%q' "$prefix/bin"
+path_line="case \":\$PATH:\" in *:${quoted_bin}:*) ;; *) export PATH=${quoted_bin}:\"\$PATH\" ;; esac # Carbot PATH"
+profiles=()
+login_shell=${SHELL:-/bin/sh}
+case "${login_shell##*/}" in
+  zsh) profiles+=("${ZDOTDIR:-$HOME}/.zshrc") ;;
+  bash)
+    profiles+=("$HOME/.bashrc")
+    if [[ -f $HOME/.bash_profile ]]; then profiles+=("$HOME/.bash_profile")
+    elif [[ -f $HOME/.bash_login ]]; then profiles+=("$HOME/.bash_login")
+    else profiles+=("$HOME/.profile"); fi ;;
+  fish)
+    fish_bin=${prefix//\\/\\\\}; fish_bin=${fish_bin//\'/\\\'}
+    path_line="if not contains -- '$fish_bin/bin' \$PATH; set -gx PATH '$fish_bin/bin' \$PATH; end # Carbot PATH"
+    profiles+=("${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/carbot.fish") ;;
+  *) profiles+=("$HOME/.profile") ;;
+esac
+for profile in "${profiles[@]}"; do
+  if [[ -f $profile ]] && grep -Fqx -- "$path_line" "$profile"; then continue; fi
+  mkdir -p "$(dirname -- "$profile")"
+  if [[ -f $profile ]]; then
+    backup=$(mktemp "$profile.carbot-backup.XXXXXX")
+    cp -p "$profile" "$backup"
+    printf 'Shell configuration backup: %s\n' "$backup"
+  fi
+  (umask 077; printf '\n%s\n' "$path_line" >> "$profile")
+  printf 'Configured PATH: %s\n' "$profile"
+done
+printf 'Installed %s to %s\nOpen a new terminal and run: carbot\n' "$version" "$destination"
+case ":$PATH:" in *":$prefix/bin:"*) echo 'This terminal already has the command directory in PATH; you can run carbot now.';; *) printf 'Without opening a new terminal, run: %s/bin/carbot\n' "$prefix";; esac
 echo 'No Rust/Node.js required. Linux command isolation needs bubblewrap; Python and vendor CLIs are optional separate dependencies.'
