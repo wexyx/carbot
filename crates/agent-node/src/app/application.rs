@@ -6,10 +6,12 @@ pub(crate) async fn serve(
     store: storage::Store,
 ) {
     let data_dir = agent_runtime::paths::data_dir();
-    println!("Local data: {}", data_dir.display());
-    agent_runtime::sandbox::initialize()
+    if !interactive {
+        println!("Local data: {}", data_dir.display());
+    }
+    agent_runtime::execution::initialize()
         .await
-        .expect("initialize embedded sandbox");
+        .expect("initialize process execution");
     let node_id = node::identity(&store).await;
     let links = node::configuration();
     let state = AppState {
@@ -44,12 +46,16 @@ pub(crate) async fn serve(
     let web = manager.web().clone();
     let addr = crate::http::web_settings::preferred(&manager.core().state().store).await;
     match web.start(manager.clone(), &addr).await {
-        Ok(url) => println!("Server: {url}"),
+        Ok(url) => {
+            if !interactive {
+                println!("Server: {url}");
+            }
+        }
         Err(error) if interactive => eprintln!("Server 未启动：{error}，可在会话中重新启动。"),
         Err(error) => {
             eprintln!("{error}");
             manager.stop().await;
-            agent_runtime::sandbox::shutdown().await;
+            agent_runtime::execution::shutdown().await;
             return;
         }
     }
@@ -62,5 +68,5 @@ pub(crate) async fn serve(
     }
     manager.stop().await;
     web.stop().await;
-    agent_runtime::sandbox::shutdown().await;
+    agent_runtime::execution::shutdown().await;
 }

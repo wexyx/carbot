@@ -6,6 +6,8 @@ permissions:
   contents: read
 jobs:
   build:
+    env:
+      CARBOT_RELEASE_VERSION: ${{ github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +30,8 @@ jobs:
       - run: rustup update stable --no-self-update
       - run: pnpm install --frozen-lockfile && pnpm web:build
       - run: cargo +stable build --release --locked -p agent-node
+      - name: Verify embedded release version
+        run: test "$(target/release/agent-node --version)" = "Carbot $CARBOT_RELEASE_VERSION"
       - run: bash scripts/package-release.sh '${{ matrix.target }}'
       - uses: actions/upload-artifact@v4
         with:

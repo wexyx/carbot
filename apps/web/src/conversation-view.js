@@ -22,7 +22,7 @@ export function conversationView(events) {
     if(type==='agent.member.error'){rows.push({seq:event.seq,type:'agent.error',timestamp,label,text,agent:speaker});answers.delete(key);continue}
     if(['user','message.created','context.reset'].includes(type))answers.clear()
     if((type==='context_checkpoint'||type==='agent.context')&&String(text).startsWith('Context compacted:')){
-      answer=null;rows.push({seq:event.seq,type:'status',timestamp,text:'上下文已自动压缩 · 原始日志保留',label:'上下文'});continue
+      answer=null;let existing=null;for(let i=rows.length-1;i>=0;i--){if(['user','message.created','context.reset'].includes(rows[i].type))break;if(rows[i].compacted){existing=rows[i];break}}if(existing)existing.timestamp=timestamp;else rows.push({seq:event.seq,type:'status',timestamp,text:'上下文已自动压缩 · 原始日志保留',label:'上下文',compacted:true});continue
     }
     if(type==='context.reset'){answer=null;rows.push({seq:event.seq,type:'status',timestamp,text:'新上下文 · 之前的记录不再发送给模型',label:'上下文'});continue}
     if(type==='context_checkpoint'||type==='agent.context'||type==='agent.progress')continue

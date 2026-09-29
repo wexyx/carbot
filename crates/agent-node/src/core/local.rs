@@ -174,7 +174,7 @@ async fn emit_progress(
     }
 }
 
-async fn execute(
+pub(super) async fn execute(
     state: &AppState,
     credential: &Credential,
     provider: &str,
@@ -289,11 +289,22 @@ async fn execute(
                     )
                     .await?,
                 )?;
-                runtime
-                    .run_events(&prompt, &mut move |chunk| {
+                let chat = command.data["capability_project"]
+                    .as_str()
+                    .map(|g| format!("group:{g}"))
+                    .unwrap_or_else(|| format!("session:{}", command.session_id));
+                let source = std::sync::Arc::new(super::log_history::LogHistory::new(
+                    state.store.logs().clone(),
+                    credential.project_id,
+                    chat,
+                ));
+                agent_runtime::context::HistoryAccess::scope(
+                    source,
+                    runtime.run_events(&prompt, &mut move |chunk| {
                         let _ = tx.send(chunk);
-                    })
-                    .await
+                    }),
+                )
+                .await
             })
             .await
     };
@@ -313,21 +324,18 @@ async fn execute(
         })
         .transpose()
         .map(|v| v.unwrap_or_default());
-    let task = tokio::time::timeout(
-        Duration::from_secs(600),
-        mode.scope(async {
-            let work = allowlist?.scope(task);
-            if let Some(group) = command.data["capability_project"].as_str() {
-                agent_runtime::workspace::with_conversation_approval(
-                    format!("{}:{}", credential.project_id, group),
-                    work,
-                )
-                .await
-            } else {
-                work.await
-            }
-        }),
-    );
+    let task = mode.scope(async {
+        let work = allowlist?.scope(task);
+        if let Some(group) = command.data["capability_project"].as_str() {
+            agent_runtime::workspace::with_conversation_approval(
+                format!("{}:{}", credential.project_id, group),
+                work,
+            )
+            .await
+        } else {
+            work.await
+        }
+    });
     tokio::pin!(task);
     let mut cancellation = tokio::time::interval(Duration::from_millis(100));
     let result = loop {
@@ -338,7 +346,7 @@ async fn execute(
                     return;
                 }
             }
-            result = &mut task => break result.unwrap_or_else(|_| Err("local agent task timed out".into())),
+            result = &mut task => break result,
             Some(event) = rx.recv() => emit_progress(state, credential, command, &event).await,
         }
     };

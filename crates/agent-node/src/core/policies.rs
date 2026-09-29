@@ -683,21 +683,18 @@ pub(crate) async fn begin_group(state: &AppState, input: RunRequest) -> Result<V
     let workspace = group.body["workspace"].clone();
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::channel::<String>(128);
-        let future = tokio::time::timeout(
-            Duration::from_secs(600),
-            super::project_execution::ProjectExecution::scope(
-                capability_project,
-                id,
-                workspace,
-                engine(
-                    &state,
-                    input.project_id,
-                    &policy,
-                    &execution_prompt,
-                    Some(&frozen),
-                    tx,
-                    &[],
-                ),
+        let future = super::project_execution::ProjectExecution::scope(
+            capability_project,
+            id,
+            workspace,
+            engine(
+                &state,
+                input.project_id,
+                &policy,
+                &execution_prompt,
+                Some(&frozen),
+                tx,
+                &[],
             ),
         );
         tokio::pin!(future);
@@ -705,7 +702,7 @@ pub(crate) async fn begin_group(state: &AppState, input: RunRequest) -> Result<V
         let answer = loop {
             tokio::select! {
                 _=cancellation.tick()=>{if conversation::stopped(&state,id).await {break Err("group interrupted; partial progress retained".into());}},
-                result=&mut future=>break result.unwrap_or_else(|_|Err("group execution timed out".into())),
+                result=&mut future=>break result,
                 Some(chunk)=rx.recv()=>{let output=event(id,"agent.activity",json!({"message_id":id,"content":chunk}));if persist_event(&state,input.project_id,&format!("session:{id}"),&output).await {let _=events.send(output);}}
             }
         };
@@ -811,13 +808,21 @@ async fn run_member_inner(
             .await;
         }
     }
-    let local = member.path.len() == 1
+    let testing_local = super::agent_tests::is_test(state, p).await
+        && member.path.len() == 1
         && state
-            .clients
-            .lock()
+            .store
+            .get("local_agents", &format!("{p}:{}", member.path[0]))
             .await
-            .get(&(p, member.path[0].clone()))
-            .is_some_and(|c| c.node_id.as_deref() == Some(&state.node_id));
+            .is_some();
+    let local = testing_local
+        || member.path.len() == 1
+            && state
+                .clients
+                .lock()
+                .await
+                .get(&(p, member.path[0].clone()))
+                .is_some_and(|c| c.node_id.as_deref() == Some(&state.node_id));
     if !local {
         let run = if let Some(snapshot) = frozen.and_then(|map| map.get(&label)) {
             snapshot.clone()

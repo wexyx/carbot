@@ -23,6 +23,7 @@ pub(super) struct Controller {
     group: Option<String>,
     previous: Option<Uuid>,
     navigation: Vec<(Uuid, Uuid, Option<String>, Option<Uuid>)>,
+    attachments: Vec<agent_runtime::attachments::Attachment>,
 }
 impl Controller {
     pub(super) async fn new(manager: Arc<Manager>) -> Result<Self, String> {
@@ -37,6 +38,7 @@ impl Controller {
             group: Some(group),
             previous: None,
             navigation: Vec::new(),
+            attachments: Vec::new(),
         })
     }
     pub(super) fn view(&self) -> (Uuid, Uuid, Option<String>) {
@@ -90,6 +92,7 @@ impl Controller {
             self.session = session;
             self.group = group;
             self.previous = previous;
+            self.attachments.clear();
             return Ok(Action {
                 navigate: true,
                 replay: true,
@@ -107,6 +110,7 @@ impl Controller {
         if action.navigate
             && (before.0 != self.project || before.1 != self.session || before.2 != self.group)
         {
+            self.attachments.clear();
             self.navigation.push(before);
         }
         Ok(action)
@@ -150,6 +154,44 @@ impl Controller {
             }
         }
         let value = match command {
+            Command::Attach(path) => {
+                if path.is_empty() {
+                    return Err("用法：/attach 文件路径（SSH 下为远端机器路径）".into());
+                }
+                if self.attachments.len() >= 8 {
+                    return Err("一次最多添加 8 个附件；/detach 清空待发送附件".into());
+                }
+                let path = path.trim_matches(['\'', '"']);
+                let path = if let Some(tail) = path.strip_prefix("~/") {
+                    agent_runtime::paths::user_home().join(tail)
+                } else {
+                    std::path::PathBuf::from(path)
+                };
+                let path = if path.is_absolute() {
+                    path
+                } else {
+                    std::env::var_os("CARBOT_LAUNCH_DIR")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?)
+                        .join(path)
+                };
+                let attachment = tokio::task::spawn_blocking(move || {
+                    agent_runtime::attachments::AttachmentStore::default().register(&path)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                action.text = format!(
+                    "已添加附件：{} · 下一条消息一起发送 · /detach 清空",
+                    attachment.name()
+                );
+                self.attachments.push(attachment);
+                return Ok(action);
+            }
+            Command::Detach => {
+                self.attachments.clear();
+                action.text = "已清空待发送附件（原文件未删除）".into();
+                return Ok(action);
+            }
             Command::Allowlist(args) => {
                 action.text = super::allowlist::execute(self.manager.core(), &args).await?;
                 return Ok(action);
@@ -264,6 +306,10 @@ impl Controller {
                 action.text = "已恢复最近的聊天记录".into();
                 return Ok(action);
             }
+            Command::Update => {
+                action.text = super::updater::install().await?;
+                return Ok(action);
+            }
             Command::Exit => {
                 action.exit = true;
                 return Ok(action);
@@ -313,6 +359,19 @@ impl Controller {
                 return Ok(action);
             }
             Command::Say(content) => {
+                let content = if self.attachments.is_empty() {
+                    content
+                } else {
+                    format!(
+                        "{}\n\n{}",
+                        content,
+                        self.attachments
+                            .iter()
+                            .map(|a| a.reference())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    )
+                };
                 let result = if let Some(group) = &self.group {
                     let result=self.manager.core().group_chat(self.project,serde_json::json!({"group_id":group,"content":content,"previous_session_id":self.previous})).await?;
                     self.previous = Some(
@@ -325,6 +384,7 @@ impl Controller {
                         .await?
                 };
                 action.sent = true;
+                self.attachments.clear();
                 result
             }
             Command::Project(None) => {
@@ -345,6 +405,7 @@ impl Controller {
                         self.previous = None;
                     }
                     Command::New => {
+                        self.attachments.clear();
                         if let Some(group) = &self.group {
                             self.manager
                                 .core()

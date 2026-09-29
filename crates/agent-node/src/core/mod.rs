@@ -43,4 +43,5 @@ mod member_events;
 
 mod command_allowlist;
 
+pub(crate) mod log_history;
 mod response_instructions;

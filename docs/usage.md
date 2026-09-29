@@ -2,6 +2,8 @@
 
 安装和架构见 [README](../README.md)。
 
+文件/图片附件、智能压缩和按行回查见 [附件与上下文](chat-files-and-context.md)。
+
 ## Web 与 CLI
 
 Web 使用 Vue 3 + Element Plus。终端与 Web 共享同一应用层、Agent、项目、日志和权限审批，不依赖彼此转发管理命令。
@@ -47,7 +49,7 @@ Web 使用 Vue 3 + Element Plus。终端与 Web 共享同一应用层、Agent、
 
 - **请求批准（ask）**：Carbot Shell 命令每次询问。
 - **帮我批准（auto）**：使用当前 Carbot 实例全局命令白名单，默认约 50 条常见只读、目录查询、版本及受限 Git 查询命令。匹配完整命令和参数，支持 `*`（任意字符，含多个参数）和 `?`（单个字符），例如 `git status *`、`cat *.md`。可执行文件名必须明确；仍拒绝管道、重定向及命令替换。宽泛规则可放行脚本和危险参数，请谨慎配置。自定义脚本命令依然可能危险，请自行核对。
-- **完全访问（full）**：明确确认后取消执行确认和目录沙箱，可访问宿主当前用户有权限的文件和网络，包括目录外及凭据。仍不提供系统管理员权限，不自动启用被禁用的 Tool/Skill/Python。仅用于可信任务。
+- **完全访问（full）**：明确确认后取消执行确认，可访问宿主当前用户有权限的文件和网络，包括目录外及凭据。仍不提供系统管理员权限，不自动启用被禁用的 Tool/Skill/Python。仅用于可信任务。
 
 Web 在单本地 Agent 项目输入区域切换，完全访问有独立风险确认框。CLI：
 
@@ -66,7 +68,7 @@ Web 在单本地 Agent 项目输入区域切换，完全访问有独立风险确
 
 普通读写 HTTP 接口：`GET/PUT /v1/repl/{project}/agents/{id}/permissions`；写入需 `mode`、`expected_version`，full 另需 `confirm_full_access:true`。沿用本机管理接口的信任边界，请勿对不可信本地程序开放管理端口；变更有审计记录。普通 Agent 配置保存不能注入权限字段。
 
-**原生运行器边界**：Codex/Claude 非交互命令的逐工具授权协议尚未转接。ask/auto 下分别保留 Codex read-only / Claude plan，需执行命令时走 Carbot 注册工具及审批；不能转接的原生操作会拒绝，不会默认批准。full 下使用 Codex danger-full-access / Claude bypassPermissions，并取消 Carbot 外层目录沙箱。此设置不解决模型账号登录认证问题。
+**原生运行器边界**：Codex/Claude 非交互命令的逐工具授权协议尚未转接。ask/auto 下分别保留 Codex read-only / Claude plan，需执行命令时走 Carbot 注册工具及审批；不能转接的原生操作会拒绝，不会默认批准。full 下使用 Codex danger-full-access / Claude bypassPermissions。所有模式均不再套 Carbot 外层系统沙箱。此设置不解决模型账号登录认证问题。
 
 授权与命令结果在 Web 输入框上方展示；默认只展示操作描述和目标，完整命令可展开核对。白名单在「管理 → 权限白名单」独立页面维护，GET/PUT /v1/permissions/allowlist，写入包含 command_allowlist 字符串数组和 expected_version。所有本地 Agent 共用，配置持久化并记录审计，不提供给模型自我修改。
 
@@ -140,7 +142,7 @@ CLI 启动不自动打印历史，使用 `/history` 恢复。鼠标保留终端�
 
 无需 AdminToken。管理路由仅允许实际回环连接并校验 Host/Origin；公网仅用于 A2A。远程管理使用 SSH 本地端口转发，不要把管理路由通过反向代理开放到公网。
 
-项目可覆盖工作目录和目录外访问策略（deny / ask），不能扩大宿主启动权限。macOS 使用原生目录隔离，Linux 使用 bubblewrap；不能把仅改变 cwd 当作安全边界。网络按沙箱策略允许，执行权限仍需审批。
+项目可覆盖工作目录和文件工具的目录外访问策略（deny / ask），不能扩大宿主配置允许的文件工具权限。Shell/Python 在工作目录直接运行，具备当前系统用户的文件和网络权限；cwd 不是安全边界。操作确认与命令白名单仍然有效。
 
 模型环境变量：`MODEL_PROVIDER`、`MODEL_NAME`、`MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_API`。显式环境变量在重启时优先于保存配置。源码和安装版统一读取 `<实例目录>/.agent.env`（默认 `~/.carbot/.agent.env`）；若运行目录存在 `.agent.env`，其同名配置覆盖实例文件。启动参数优先于显式环境变量，显式环境变量优先于文件。配置文件仅支持字面量 `KEY=value`，不执行 Shell 或变量替换；相对目录基于配置文件所在目录。`--name` / `--data-dir` 先选择实例，再读取配置；实例文件不能通过 `CARBOT_DATA_DIR` 重定向自身。运行目录配置中的 `CARBOT_DATA_DIR` 可以选择实例，仍受显式参数/环境变量覆盖。交互保存的模型配置 `default-agent.json` 优先于文件中的模型默认值，避免旧模板覆盖已保存的配置。
 

@@ -1,15 +1,17 @@
 pub mod agent;
+pub mod attachments;
+mod browser;
 pub mod config;
 pub mod context;
 mod errors;
 mod events;
+pub mod execution;
 mod factory;
 mod managed_runtime;
 pub mod paths;
 mod providers;
 mod runtime;
 mod runtime_kind;
-pub mod sandbox;
 pub mod skills;
 pub mod tools;
 pub mod workspace;

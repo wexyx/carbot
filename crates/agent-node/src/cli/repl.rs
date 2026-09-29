@@ -16,7 +16,8 @@ pub(crate) async fn run(manager: Arc<Manager>) -> Result<(), String> {
     let mut controller = Controller::new(manager.clone()).await?;
     let (p, id, b) = controller.view();
     let mut watcher = output::watch(manager.clone(), p, id, b, false).await;
-    println!("{}\n{}", super::commands::HELP, controller.heading());
+    let address = manager.web().address().await.map(|a| format!("http://{a}"));
+    println!("{}", super::banner::text(address.as_deref(), 80));
     let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
     loop {
         print!("{}> ", controller.label());

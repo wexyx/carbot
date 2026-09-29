@@ -22,3 +22,9 @@ test('compact process lines show actions without dumping JSON results', async()=
   assert.equal(processSummary({type:'tool',name:'python',pending:true},true),'正在运行 python')
   assert.equal(processSummary({type:'process',label:'context.compact',pending:true},true),'正在压缩上下文')
 })
+
+test('live status keeps a short tool name last, without command arguments',async()=>{
+ const {compactProcessSummary}=await import('./process-summary.js')
+ assert.equal(compactProcessSummary({type:'tool',name:'command_run',input:JSON.stringify({command:'ls -la /long/private/path'}),pending:true}),'执行中 · command_run · ls')
+ assert.equal(compactProcessSummary({type:'tool',name:'python_run',pending:true}),'执行中 · python')
+})

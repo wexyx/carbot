@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 pub(super) struct ChatProtocol;
 impl ModelProtocol for ChatProtocol {
+    fn image(&self, image: &crate::attachments::AttachmentImage) -> Value {
+        json!({"type":"image_url","image_url":{"url":format!("data:{};base64,{}",image.media_type,image.data)}})
+    }
     fn tool(&self, d: &ToolDefinition) -> Value {
         json!({"type":"function","function":{"name":d.name(),"description":d.description(),"parameters":d.parameters()}})
     }

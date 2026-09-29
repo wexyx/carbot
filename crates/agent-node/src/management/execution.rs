@@ -51,16 +51,25 @@ pub(super) async fn run(
     journal: Journal,
     id: Uuid,
     runtime: Box<dyn AgentRuntime>,
+    project: Uuid,
     prompt: String,
     mut cancel: watch::Receiver<bool>,
 ) {
     let (tx, mut rx) = mpsc::unbounded_channel();
+    let logs = manager.core().state().store.logs().clone();
     let mut execution = tokio::spawn(async move {
-        runtime
-            .run_events(&prompt, &mut |event| {
+        let source = Arc::new(crate::core::log_history::LogHistory::new(
+            logs,
+            project,
+            "admin".into(),
+        ));
+        agent_runtime::context::HistoryAccess::scope(
+            source,
+            runtime.run_events(&prompt, &mut |event| {
                 let _ = tx.send(event);
-            })
-            .await
+            }),
+        )
+        .await
     });
     let (write_tx, write_rx) = mpsc::unbounded_channel();
     let writer = tokio::spawn(writer::run(

@@ -40,8 +40,8 @@ Web 群聊列表会刷新；CLI 用 /chat 群UUID 进入，普通消息派发给
 AdminAgent 与业务 Agent 都运行在当前节点进程；停止 Web 不影响它们。关闭进程会停止运行，历史保留。
 启动时配置不可由 AI 修改；权限请求由用户确认，AdminAgent 不能自己批准。交互保存的模型配置优先于 `.agent.env` 等文件中的默认值；显式导出的环境变量仍优先，不会被交互配置静默覆盖。
 
-Linux Python/CLI 沙箱需要 bubblewrap 和宿主允许 user namespace。macOS 使用系统 sandbox-exec。不可用时明确失败，不降级为裸执行。
-参见 [管理架构](admin-agent.md)、[Skill 与原生沙箱](skills-and-sandbox.md)。
+Carbot 直接运行本机进程，不需要额外系统沙箱组件。执行命令和 Python 使用当前系统账号的权限，操作确认仍保留。
+参见 [管理架构](admin-agent.md)、[Skill 与本机执行](skills-and-sandbox.md)。
 
 多实例使用 `./carbot --name dev --web-port 8787`，另一个实例改用 `--name review --web-port 8788`。数据目录为工作目录下 `.carbot_<name>`；同名同目录禁止重复启动。端口 0 自动分配，端口冲突不会抢占已有服务。权限面板支持「确认/拒绝」及方向键选择，Esc 收起、Ctrl+P 打开。
 

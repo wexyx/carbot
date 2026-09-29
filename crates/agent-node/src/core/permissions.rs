@@ -36,7 +36,7 @@ impl Core {
             return Err("mode required".into());
         }
         if mode == Some(PermissionMode::Full) && input["confirm_full_access"] != true {
-            return Err("完全访问将取消目录沙箱及执行确认，可读写当前系统用户有权访问的文件并联网；必须明确确认。运行中任务不会被取消。".into());
+            return Err("完全访问将取消执行确认，可读写当前系统用户有权访问的文件并联网；必须明确确认。运行中任务不会被取消。".into());
         }
         let expected = input["expected_version"]
             .as_u64()

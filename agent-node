@@ -37,6 +37,7 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 && ( $2 == ask || $2 == deny ) ]] || { usage >&2; exit 2; }
       startup_args+=(--outside-access "$2"); shift 2 ;;
     --help) usage; exit 0 ;;
+    --version|-V) startup_args+=(--version); interactive=true; shift ;;
     *) usage >&2; exit 2 ;;
   esac
 done

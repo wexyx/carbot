@@ -10,6 +10,10 @@ pub(crate) fn configure() -> Result<Option<bool>, String> {
     let mut web_port = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--version" | "-V" => {
+                println!("Carbot {}", super::version::DISPLAY);
+                return Ok(None);
+            }
             "--cli" => interactive = true,
             "--name" => name = Some(args.next().ok_or("--name requires an instance alias")?),
             "--data-dir" => {
@@ -35,7 +39,7 @@ pub(crate) fn configure() -> Result<Option<bool>, String> {
             }
             "--help" | "-h" => {
                 println!(
-                    "agent-node [--cli] [--name ALIAS | --data-dir PATH] [--server-port PORT] [--workdir PATH] [--outside-access deny|ask]"
+                    "agent-node [--version] [--cli] [--name ALIAS | --data-dir PATH] [--server-port PORT] [--workdir PATH] [--outside-access deny|ask]"
                 );
                 return Ok(None);
             }

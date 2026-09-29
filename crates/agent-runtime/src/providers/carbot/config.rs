@@ -14,7 +14,6 @@ pub struct HarnessConfig {
     pub base: String,
     pub key: String,
     pub model: String,
-    pub max_steps: usize,
     pub max_tokens: u64,
     pub root: PathBuf,
 }
@@ -26,9 +25,6 @@ impl HarnessConfig {
         }
         if self.model.is_empty() {
             return Err("MODEL_NAME is required; select a model with tool-calling support".into());
-        }
-        if !(1..=64).contains(&self.max_steps) {
-            return Err("HARNESS_MAX_STEPS must be 1..64".into());
         }
         self.context.input_limit(self.max_tokens)?;
         self.root = std::fs::canonicalize(self.root).map_err(|_| "AGENT_WORKDIR does not exist")?;
@@ -79,13 +75,6 @@ impl HarnessConfig {
             return Err("MODEL_API_KEY is required".into());
         }
         let context = crate::context::ContextBudget::from_lookup(&get)?;
-        let max_steps = get("HARNESS_MAX_STEPS")
-            .unwrap_or_else(|| "12".into())
-            .parse()
-            .map_err(|_| "invalid HARNESS_MAX_STEPS")?;
-        if !(1..=64).contains(&max_steps) {
-            return Err("HARNESS_MAX_STEPS must be 1..64".into());
-        }
         let max_tokens = get("HARNESS_MAX_TOKENS")
             .unwrap_or_else(|| "4096".into())
             .parse()
@@ -103,7 +92,6 @@ impl HarnessConfig {
             base: base.trim_end_matches('/').into(),
             key,
             model,
-            max_steps,
             max_tokens,
             root,
         })
@@ -160,6 +148,5 @@ mod tests {
         assert!(config("openai", &[("MODEL_API", "invalid")]).is_err());
         assert!(config("openai", &[("MODEL_API_KEY", "")]).is_err());
         assert!(config("ollama", &[("MODEL_API_KEY", "")]).is_ok());
-        assert!(config("openai", &[("HARNESS_MAX_STEPS", "0")]).is_err());
     }
 }

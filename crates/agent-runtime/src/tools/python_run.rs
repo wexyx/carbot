@@ -4,7 +4,7 @@ use std::sync::Arc;
 struct PythonRun {
     context: Arc<ToolContext>,
 }
-#[crate::tools::tool(name = "python_run", description = "Execute an approved skill script through the node's sandbox.", parameters = json!({"type":"object","properties":{"skill_id":{"type":"string"},"path":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["skill_id"],"additionalProperties":false}), runtime = crate)]
+#[crate::tools::tool(name = "python_run", description = "Execute an approved skill script on the host with the current OS user's file and network permissions; the working directory is not an isolation boundary. Save generated artifacts under os.environ['CARBOT_TMP_DIR'] unless the user requests another output path.", parameters = json!({"type":"object","properties":{"skill_id":{"type":"string"},"path":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["skill_id"],"additionalProperties":false}), runtime = crate)]
 impl PythonRun {
     fn new(context: Arc<ToolContext>) -> Option<Self> {
         (!context.skills().is_empty()).then_some(Self { context })

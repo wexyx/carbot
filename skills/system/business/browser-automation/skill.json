@@ -1,1 +1,1 @@
-{"description":"使用工作目录中的 Playwright/Chromium 脚本进行网页自动化与截图","enabled":true}
+{"description":"使用 Puppeteer 与独立 Headless Shell 进行网页自动化和截图","enabled":true}

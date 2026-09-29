@@ -113,6 +113,13 @@ pub(super) async fn request(
 ) -> Result<(), String> {
     enqueue(workdir, path, operation, None).await
 }
+pub(crate) async fn confirm_browser(workdir: &std::path::Path, url: &str) -> Result<(), String> {
+    if crate::permissions::PermissionMode::current() == crate::permissions::PermissionMode::Full {
+        return Ok(());
+    }
+    // Shell allowlists/session grants do not silently authorize host browser execution.
+    enqueue(workdir,workdir,&format!("浏览器独立执行：{url}。浏览器不受 Carbot 目录沙箱限制，拥有当前用户文件权限；保留 Chromium 沙箱并使用临时配置，不读取个人 Cookie。"),None).await
+}
 pub(crate) async fn confirm_command(
     workdir: &std::path::Path,
     command: &str,
@@ -121,7 +128,7 @@ pub(crate) async fn confirm_command(
     if crate::permissions::PermissionMode::current().approves_command(command) {
         return Ok(());
     }
-    enqueue(workdir,workdir,&format!("执行 Shell 命令（profile: {profile}）。可能修改/删除工作区文件、执行程序及联网；不会获得目录外权限。"),Some(command.into())).await
+    enqueue(workdir,workdir,&format!("执行 Shell 命令（profile: {profile}）。拥有当前系统用户的文件和网络权限，可能修改/删除工作目录外的文件；工作目录不是隔离边界。"),Some(command.into())).await
 }
 async fn enqueue(
     workdir: &std::path::Path,

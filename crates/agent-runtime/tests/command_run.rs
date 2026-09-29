@@ -72,7 +72,7 @@ async fn dynamic_commands_and_disabled_builtins_share_the_same_execution_gate() 
 }
 
 #[tokio::test]
-async fn shell_requires_one_shot_approval_and_stays_in_workspace() {
+async fn shell_requires_one_shot_approval_then_can_access_host_files() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("workspace");
     std::fs::create_dir(&root).unwrap();
@@ -147,8 +147,9 @@ async fn shell_requires_one_shot_approval_and_stays_in_workspace() {
             assert_eq!(output["success"], true);
         } else {
             let output = result.unwrap();
-            assert_eq!(output["success"], false);
-            assert!(!output["stdout"].as_str().unwrap().contains("private"));
+            assert_eq!(output["success"], true);
+            assert_eq!(output["stdout"], "private");
+            assert_eq!(output["execution"], "host");
         }
         assert!(!workspace::pending().iter().any(|r| r.id == approval.id));
     }

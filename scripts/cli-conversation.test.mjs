@@ -12,7 +12,7 @@ test('CLI renders a Carbot tool roundtrip as conversation and restores its promp
   const model=await modelFixture()
   let child,output=''
   try{
-    child=spawn(resolve('target/debug/agent-node'),['--cli'],{cwd:dir,env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,...model.env},stdio:['pipe','pipe','pipe']})
+    child=spawn(resolve('target/debug/agent-node'),['--cli','--web-port','0'],{cwd:dir,env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,...model.env},stdio:['pipe','pipe','pipe']})
     child.stdout.on('data',data=>output+=data)
     child.stderr.on('data',data=>output+=data)
     const wait=async text=>{
@@ -25,9 +25,9 @@ test('CLI renders a Carbot tool roundtrip as conversation and restores its promp
     }
     await wait('group> ');child.stdin.write('/manage\n');await wait('admin> ')
     child.stdin.write('在哪 TEST_PLAN:[{"name":"group_list","input":{}}]\n')
-    await wait('[完成]\nadmin> ')
+    await wait('Fixture complete\nadmin> ')
     assert.match(output,/调用工具：group_list/)
-    assert.match(output,/Agent: Fixture complete/)
+    assert.match(output,/│ Agent\nFixture complete/)
     assert.equal(output.match(/Fixture complete/g)?.length,1)
     assert.ok(!output.includes('"type"')&&!output.includes('"seq"')&&!output.includes('"status"'),output)
     const exited=once(child,'exit');child.stdin.end('/exit\n');await exited

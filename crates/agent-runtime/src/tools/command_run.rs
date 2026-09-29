@@ -10,7 +10,7 @@ struct Input {
 struct CommandRun {
     context: Arc<ToolContext>,
 }
-#[crate::tools::tool(name="command_run",description="Run a shell command in this Agent workspace sandbox. Authorization follows the host-selected permission mode; never approve your own actions. May modify/delete workspace files or access the network according to the host profile. Never bypass an approval or sandbox denial.",parameters=json!({"type":"object","properties":{"command":{"type":"string","maxLength":8192}},"required":["command"],"additionalProperties":false}),runtime=crate)]
+#[crate::tools::tool(name="command_run",description="Run a shell command on the host in this Agent working directory. Authorization follows the host-selected permission mode; never approve your own actions. Runs with the current OS user permissions, including files outside the working directory and network access. Save generated screenshots, downloads and temporary artifacts under $CARBOT_TMP_DIR, not the working directory root, unless the user explicitly requests another output path. Never bypass an approval denial.",parameters=json!({"type":"object","properties":{"command":{"type":"string","maxLength":8192}},"required":["command"],"additionalProperties":false}),runtime=crate)]
 impl CommandRun {
     fn new(context: Arc<ToolContext>) -> Option<Self> {
         context.workdir().is_some().then_some(Self { context })

@@ -19,5 +19,5 @@ pub(super) async fn run(context: &ToolContext, command: &str) -> Result<Value, S
     if root.canonicalize().map_err(|e| e.to_string())? != root {
         return Err("workspace changed during approval".into());
     }
-    crate::sandbox::execute_command(root, command.into(), profile).await
+    crate::execution::execute_command(root, command.into(), profile).await
 }

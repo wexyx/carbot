@@ -21,8 +21,10 @@ impl Profile {
         {
             return Err("invalid profile id".into());
         }
-        if !matches!(self.network.as_str(), "none" | "host") {
-            return Err("network must be none or host".into());
+        if self.network != "host" {
+            return Err(
+                "network must be host; Carbot no longer isolates process networking".into(),
+            );
         }
         if !(1..=120).contains(&self.timeout_seconds) {
             return Err("timeout_seconds must be 1..120".into());

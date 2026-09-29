@@ -27,6 +27,6 @@ impl PythonExecutor {
             profile: self.policy.select_profile(skill.execution_profile())?,
         };
         request.validate()?;
-        crate::sandbox::execute(request).await
+        crate::execution::execute(request).await
     }
 }

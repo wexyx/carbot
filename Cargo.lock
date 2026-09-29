@@ -42,6 +42,7 @@ dependencies = [
  "agent-protocol",
  "agent-tool-macros",
  "axum",
+ "base64",
  "futures-util",
  "inventory",
  "libc",

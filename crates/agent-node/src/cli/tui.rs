@@ -24,9 +24,9 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
     let _screen = Screen::enter()?;
     let mut keyboard = EventStream::new();
     let mut editor = Editor::default();
-    let mut transcript = String::from(
-        "Carbot · 对话即管理\n直接输入任务；/history 恢复聊天；/tools 查看工具；鼠标原生滚动与复制。\n",
-    );
+    let address = manager.web().address().await.map(|a| format!("http://{a}"));
+    _screen.banner(address.as_deref())?;
+    let mut transcript = String::new();
     let mut tools = super::tool_timeline::ToolTimeline::default();
     let mut presentation = Presentation::default();
     let mut dialog = super::permission_dialog::PermissionDialog::default();
@@ -42,7 +42,9 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
     let mut dirty = true;
     let mut exit_armed: Option<Instant> = None;
     let mut scroll = 0usize;
-    let mut status = String::from("就绪 · Ctrl+C 清空输入，再按一次退出 · Ctrl+D 退出");
+    let mut status = String::new();
+    let mut update_status = super::updater::subscribe();
+    let update_check = tokio::spawn(super::updater::check());
     let mut tick = tokio::time::interval(Duration::from_millis(40));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let shutdown = crate::app::shutdown_signal();
@@ -51,6 +53,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
         loop {
             tokio::select! {
                 _=&mut shutdown=>break,
+                result=update_status.changed()=>{if result.is_ok(){dirty=true;}},
                 item=keyboard.next()=>{
                     let Some(event)=item else {break;};
                     match event.map_err(|e|e.to_string())? {
@@ -68,7 +71,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                                     status="正在处理权限确认…".into();
                                     decision_job=Some(tokio::spawn(async move{
                                         let result=if conversation{agent_runtime::workspace::allow_conversation(permission.id)}else if permission.workspace{agent_runtime::workspace::decide(permission.id,allow)}else{manager.core().decide(permission.project,permission.id,allow).await.map(|_|())};
-                                        let _=tx.send(result.map(|_|if conversation{"本对话后续命令已允许；目录沙箱保留，重置上下文或重启后失效。".to_string()}else if allow{"已允许一次，操作继续执行。".to_string()}else{"已拒绝此操作。".to_string()}));
+                                        let _=tx.send(result.map(|_|if conversation{"本对话后续命令已允许；命令具有当前系统用户权限，重置上下文或重启后失效。".to_string()}else if allow{"已允许一次，操作继续执行。".to_string()}else{"已拒绝此操作。".to_string()}));
                                     }));
                                 }
                                 continue;
@@ -109,7 +112,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                                     transcript.push_str(&format!("\n你：{line}\n"));scroll=0;
                                     if !line.starts_with('/'){pending_echo=Some(line.clone());busy=true;started=Instant::now();}
                                     status="正在提交…".into();submitting=true;
-                                    _screen.draw(&controller.heading(),&transcript,&status,&session_info,&editor,false,scroll,None,&tools)?;
+                                    _screen.draw(&controller.heading(),&transcript,&status,&session_info,&update_status.borrow().clone(),&editor,false,scroll,None,&tools)?;
                                     let mut next=controller.clone();let tx=actions_tx.clone();
                                     submission=Some(tokio::spawn(async move{let result=next.execute(&line).await;let _=tx.send((next,result));}));
 
@@ -148,7 +151,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                         Update::Event(row)=>{
                             let event=row.get("payload").unwrap_or(&row);
                             match event["type"].as_str().unwrap_or_default() {
-                                "user"|"message.created"=>{busy=true;started=Instant::now();let text=event["content"].as_str().unwrap_or_default();if pending_echo.as_deref()==Some(text){pending_echo=None;}else{transcript.push_str(&format!("\n你：{text}\n"));}},
+                                "user"|"message.created"=>{tools.begin_turn();busy=true;started=Instant::now();let text=event["content"].as_str().unwrap_or_default();if pending_echo.as_deref()==Some(text){pending_echo=None;}else{transcript.push_str(&format!("\n你：{text}\n"));}},
                                 "context_checkpoint"|"agent.context"=>{if event["content"].as_str().unwrap_or_default().starts_with("Context compacted:"){status="上下文已自动压缩 · 原始日志保留".into();}},
                                 "agent.progress"=>status=format!("执行中 · {}",event["agent"].as_str().unwrap_or("Agent")),
                                 "tool_started"|"agent.tool.started"=>status=format!("调用工具：{}",event["name"].as_str().unwrap_or("tool")),
@@ -167,8 +170,9 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                     if dirty||busy {
                         let secret=wizard.as_ref().is_some_and(|w|w.field().secret);
                         let heading=wizard.as_ref().map(|w|w.prompt()).unwrap_or_else(||controller.heading());
-                        let shown=if busy {format!("{} · {:.1}s · Esc 打断",status,started.elapsed().as_secs_f64())}else{status.clone()};
-                        _screen.draw(&heading,&transcript,&shown,&session_info,&editor,secret,scroll,if wizard.is_none(){dialog.text()}else{None}.as_deref(),&tools)?;dirty=false;
+                        let shown=if let Some(w)=wizard.as_ref(){w.prompt()}else if busy {let tool=tools.status((started.elapsed().as_secs()/2) as usize).map(|value|format!(" · {}",value.split_once(" · ").map(|(_,name)|name).unwrap_or(&value))).unwrap_or_default();format!("执行中 · {:>6.1}s · Esc 打断{}",started.elapsed().as_secs_f64(),tool)}else{status.clone()};
+                        let update=update_status.borrow().clone();
+                        _screen.draw(&heading,&transcript,&shown,&session_info,&update,&editor,secret,scroll,if wizard.is_none(){dialog.text()}else{None}.as_deref(),&tools)?;dirty=false;
                     }
                 }
             }
@@ -176,6 +180,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
         Ok(())
     }.await;
     watcher.abort();
+    update_check.abort();
     if let Some(job) = submission {
         job.abort();
     }

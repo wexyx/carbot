@@ -82,6 +82,7 @@ function addFile(){
 const content=computed(()=>editing.value?draft.value:current.value?.resource.definition)
 const testMode=ref('read'),testScript=ref('')
 const scripts=computed(()=>Object.keys(content.value?.files||{}).filter(f=>f.endsWith('.py')))
+watch([testMode,scripts],()=>{if(testMode.value==='python'&&!scripts.value.includes(testScript.value))testScript.value=scripts.value[0]||''})
 </script>
 <template>
 <ConfigPanel inline :title="(scope==='management'?'管理':'项目')+'能力库'" eyebrow="SHARED CAPABILITIES" description="统一维护工具与 Skill，在 Agent 表格中直接启用或停用。" :busy="busy" :dirty="dirty" @close="$emit('close')">
@@ -132,8 +133,9 @@ const scripts=computed(()=>Object.keys(content.value?.files||{}).filter(f=>f.end
     <div v-if="remove" class="config-alert warning">删除会影响所有项目中对此定义的引用。<el-button type="primary" native-type="button" :disabled="busy" @click="deleteResource">确认删除</el-button><el-button type="default" native-type="button" class="secondary" @click="remove=false">取消</el-button></div>
     <div v-if="panel==='test'" class="skill-test-options"><div class="section-heading"><h4>在当前项目与 Agent 中试运行</h4><p>使用这里显示的最终启用状态；不绕过执行权限。</p></div>
      <div v-if="kind==='skill'" class="form-grid"><label>测试类型<el-select v-model="testMode"><el-option value="read" :label="&quot;加载 SKILL.md&quot;" /><el-option v-if="scope==='business'&&scripts.length" value="python" :label="&quot;执行 Python&quot;" /></el-select></label><label v-if="testMode==='python'">脚本<el-select v-model="testScript"><el-option value="" :label="&quot;选择脚本&quot;" /><el-option v-for="path in scripts" :key="path" :label="(path)" :value="(path)" /></el-select></label></div>
+     <p v-if="kind==='skill'&&testMode==='python'" class="muted">已选择脚本。args 是命令行参数数组，例如 ["--input", "./sample.txt"]；不需要参数时保留 []，具体以 SKILL.md 和脚本说明为准。</p>
      <p v-if="!localTarget||!agent" class="muted">请选择当前节点中可运行的本地 Agent 后测试。</p>
-     <ToolTest v-if="agent" :key="selected+contextProject+contextGroup+agent+testMode+testScript+current.resolution.enabled" :request="request" :project="contextProject" :group="contextGroup" :scope="scope" :agent="agent" :name="kind==='tool'?name(current.resource):testMode==='read'?'skill_read':'python_run'" :initial-arguments="kind==='skill'?(testMode==='read'?{skill_id:content.id}:{skill_id:content.id,path:testScript,args:[]}):{}" :disabled="busy||!canTest||(kind==='skill'&&testMode==='python'&&!testScript)"/>
+     <ToolTest v-if="agent" :key="selected+contextProject+contextGroup+agent+testMode+testScript+current.resolution.enabled" :request="request" :project="contextProject" :group="contextGroup" :scope="scope" :agent="agent" :name="kind==='tool'?name(current.resource):testMode==='read'?'skill_read':'python_run'" :schema="kind==='tool'?content.parameters:undefined" :initial-arguments="kind==='skill'?(testMode==='read'?{skill_id:content.id}:{skill_id:content.id,path:testScript,args:[]}):undefined" :disabled="busy||!canTest||(kind==='skill'&&testMode==='python'&&!testScript)"/>
     </div>
    </template>
    <div v-else class="config-empty"><span>{{kind==='tool'?'⌘':'▤'}}</span><h3>统一能力库</h3><p>创建或导入一次定义，再按项目与 Agent 绑定使用。</p></div>

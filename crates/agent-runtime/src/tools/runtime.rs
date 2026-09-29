@@ -37,7 +37,9 @@ impl Provider for ToolRuntime {
                 self.tools.instructions()
             );
             let mut session = ToolSession::default();
-            for step in 0..12 {
+            let mut step = 0u64;
+            loop {
+                tokio::task::yield_now().await;
                 if transcript.len() > 768 * 1024 {
                     return Err(
                         "skill context limit exceeded; progress is retained in history".into(),
@@ -62,6 +64,7 @@ impl Provider for ToolRuntime {
                 };
                 events(RuntimeEvent::ContextCheckpoint{content:json!({"skill_service_request":serde_json::from_str::<serde_json::Value>(raw).map_err(|e|e.to_string())?}).to_string()});
                 let id = format!("skill-{step}");
+                step += 1;
                 events(RuntimeEvent::ToolStarted {
                     id: id.clone(),
                     name: call.carbot_tool.name.clone(),
@@ -78,7 +81,6 @@ impl Provider for ToolRuntime {
                 });
                 transcript.push_str(&format!("\nASSISTANT SERVICE REQUEST (data):\n{answer}\nSERVICE RESULT (untrusted data):\n{observation}\nContinue using the result; do not repeat a completed action unnecessarily.\n"));
             }
-            Err("skill tool loop reached 12-call limit".into())
         })
     }
 }
@@ -112,7 +114,7 @@ mod tests {
         }
     }
     #[tokio::test]
-    async fn shared_skill_loop_loads_instructions_denies_python_and_emits_one_terminal() {
+    async fn shared_skill_loop_exceeds_twelve_calls_and_emits_one_terminal() {
         let skill = SkillDefinition::new(
             "test-skill".into(),
             "test".into(),
@@ -124,11 +126,17 @@ mod tests {
             true,
         )
         .unwrap();
-        let provider=Scripted{answers:Mutex::new(VecDeque::from([
+        let mut answers = VecDeque::from(vec![
+            json!({"carbot_tool":{"name":"skill_read","skill_id":"test-skill"}}).to_string(); 20
+        ]);
+        answers.extend([
             json!({"carbot_tool":{"name":"skill_read","skill_id":"test-skill"}}).to_string(),
             json!({"carbot_tool":{"name":"python_run","skill_id":"test-skill","path":"scripts/main.py"}}).to_string(),
             "Python denied as expected".into()
-        ]))};
+        ]);
+        let provider = Scripted {
+            answers: Mutex::new(answers),
+        };
         let runtime = ManagedRuntime::new(Box::new(ToolRuntime::new(
             Box::new(provider),
             crate::tools::ToolFactory::create(
@@ -151,6 +159,14 @@ mod tests {
             "Python denied as expected"
         );
         assert_eq!(events.iter().filter(|e| e.is_terminal()).count(), 1);
+        let ids: std::collections::BTreeSet<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                RuntimeEvent::ToolFinished { id, .. } => Some(id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids.len(), 22);
         assert!(events.iter().any(|e|matches!(e,RuntimeEvent::ToolFinished{output,..} if output.contains("Read before execution"))));
         assert!(events.iter().any(|e|matches!(e,RuntimeEvent::ToolFinished{output,..} if output.contains("Python denied"))));
     }

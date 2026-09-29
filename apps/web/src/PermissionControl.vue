@@ -22,7 +22,7 @@ function choose(mode){if(mode==='full'){confirm.value=true}else save(mode)}
   <small v-if="!compact">仅此 Agent · 下个项目任务生效</small><p v-if="error" role="alert">{{error}}</p>
  </div>
  <el-dialog v-model="confirm" title="开启完全访问？" width="min(520px,94vw)" append-to-body :close-on-click-modal="false">
-  <p>Agent 将跳过执行确认和目录沙箱，可读写系统当前用户有权访问的文件并联网，包括工作目录外的文件和凭据。仅对可信任务使用。</p>
+  <p>Agent 将跳过执行确认，可读写系统当前用户有权访问的文件并联网，包括工作目录外的文件和凭据。仅对可信任务使用。</p>
   <p>已经运行的任务保持原权限；管理聊天和管理工具的审批不受此设置影响。</p>
   <template #footer><el-button :disabled="busy" @click="confirm=false">取消</el-button><el-button type="danger" :loading="busy" @click="save('full')">我了解风险，开启完全访问</el-button></template>
  </el-dialog>

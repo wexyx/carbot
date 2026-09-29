@@ -5,6 +5,9 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import {ElConfigProvider} from 'element-plus/es/components/config-provider/index'
 import {ElDropdown,ElDropdownMenu,ElDropdownItem} from 'element-plus/es/components/dropdown/index'
 import 'element-plus/es/components/dropdown/style/css'
+import {ElImage} from 'element-plus/es/components/image/index'
+import 'element-plus/es/components/image/style/css'
+import 'element-plus/es/components/image-viewer/style/css'
 import {ElButton} from 'element-plus/es/components/button/index'
 import {ElSwitch} from 'element-plus/es/components/switch/index'
 import 'element-plus/es/components/switch/style/css'
@@ -61,7 +64,7 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import './style.css'
 import './config-panels.css'
 const app=createApp({render:()=>h(ElConfigProvider,{locale:zhCn,emptyValues:[null,undefined]},()=>h(RouterView))})
-for(const component of [ElDropdown,ElDropdownMenu,ElDropdownItem,ElSwitch,ElButton,ElInput,ElInputNumber,ElSelect,ElOption,ElCheckbox,ElRadioGroup,ElRadioButton,ElForm,ElFormItem,ElDialog,ElDrawer,ElTabs,ElTabPane,ElTable,ElTableColumn,ElTag,ElAlert,ElAvatar,ElCollapse,ElCollapseItem,ElEmpty,ElTooltip,ElIcon])app.component(component.name,component)
+for(const component of [ElImage,ElDropdown,ElDropdownMenu,ElDropdownItem,ElSwitch,ElButton,ElInput,ElInputNumber,ElSelect,ElOption,ElCheckbox,ElRadioGroup,ElRadioButton,ElForm,ElFormItem,ElDialog,ElDrawer,ElTabs,ElTabPane,ElTable,ElTableColumn,ElTag,ElAlert,ElAvatar,ElCollapse,ElCollapseItem,ElEmpty,ElTooltip,ElIcon])app.component(component.name,component)
 app.use(router)
 router.isReady().then(()=>app.mount('#app'))
 

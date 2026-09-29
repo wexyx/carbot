@@ -291,6 +291,7 @@ impl Manager {
             self.journal.clone(),
             id,
             runtime,
+            project,
             prompt,
             cancelled,
         ));

@@ -26,30 +26,22 @@ async fn endpoint() -> (String, tokio::task::JoinHandle<()>) {
 }
 
 #[tokio::test]
-async fn python_and_shell_reach_network_but_not_outside_files() {
+async fn python_and_shell_use_host_network_and_filesystem() {
     let root = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
-    std::fs::write(outside.path().join("secret"), "not readable").unwrap();
+    std::fs::write(outside.path().join("secret"), "host file").unwrap();
     let (url, server) = endpoint().await;
-    let native = NativeCommand::new().unwrap();
-    let mut python = native
-        .command(Path::new("python3"), root.path(), &[], &[], true)
-        .unwrap();
+    let native = NativeCommand::new(root.path()).unwrap();
+    let mut python = native.command(Path::new("python3"), root.path()).unwrap();
     python.args(["-I","-c",r#"import pathlib,sys,urllib.request
 pathlib.Path('python-proof').write_text('real file')
-try:
-    pathlib.Path(sys.argv[1]).read_text()
-except PermissionError:
-    pass
-else:
-    raise RuntimeError('outside sandbox readable')
+assert pathlib.Path(sys.argv[1]).read_text() == 'host file'
+pathlib.Path(sys.argv[1]).write_text('updated')
 print(urllib.request.build_opener(urllib.request.ProxyHandler({})).open(sys.argv[2],timeout=4).read().decode())
 "#]).arg(outside.path().join("secret")).arg(&url);
     let py = tokio::time::timeout(std::time::Duration::from_secs(8), python.output()).await;
-    let mut shell = native
-        .command(Path::new("/bin/sh"), root.path(), &[], &[], true)
-        .unwrap();
-    shell.args(["-c",&format!("printf real > shell-proof; if cat '{}' 2>/dev/null; then exit 9; fi; curl --noproxy '*' --max-time 4 -fsS '{}'",outside.path().join("secret").display(),url)]);
+    let mut shell = native.command(Path::new("/bin/sh"), root.path()).unwrap();
+    shell.args(["-c",&format!("printf real > shell-proof; test \"$(cat '{}')\" = updated || exit 9; curl --noproxy '*' --max-time 4 -fsS '{}'",outside.path().join("secret").display(),url)]);
     let sh = tokio::time::timeout(std::time::Duration::from_secs(8), shell.output()).await;
     server.abort();
     for output in [py.unwrap().unwrap(), sh.unwrap().unwrap()] {

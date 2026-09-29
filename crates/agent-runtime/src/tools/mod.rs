@@ -1,9 +1,11 @@
 mod bridge;
+mod browser_run;
 mod context;
 mod contract;
 mod factory;
 mod filesystem;
 pub use agent_tool_macros::tool;
+mod history_read;
 mod python_run;
 mod registry;
 mod runtime;
@@ -22,3 +24,5 @@ mod external_command;
 mod policy;
 mod shell_execution;
 pub use policy::{ExternalCommand, ToolPolicy};
+
+mod image_show;

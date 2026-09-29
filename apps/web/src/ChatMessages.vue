@@ -1,12 +1,17 @@
 <script setup>
 import {Tools,Loading,Check} from '@element-plus/icons-vue'
-import {ref,computed,watch,nextTick} from 'vue'
+import {ref,computed,watch,nextTick,onBeforeUnmount} from 'vue'
 import {messageClock,messageDate} from './chat-time.js'
-import {processSummary} from './process-summary.js'
+import {processSummary,compactProcessSummary} from './process-summary.js'
 import {processView} from './process-view.js'
-import MarkdownText from './MarkdownText.vue'
+import MessageBody from './MessageBody.vue'
 const props=defineProps({messages:Array,running:Boolean,management:Boolean,emptyTitle:String,emptyDescription:String,hasMore:Boolean,loadOlder:Function,progress:String})
 const emit=defineEmits(['suggest','history-error'])
+const rotation=ref(0)
+const rotationTimer=setInterval(()=>{if(props.running&&!document.hidden)rotation.value++},2200)
+onBeforeUnmount(()=>clearInterval(rotationTimer))
+const currentProcess=computed(()=>{const pending=liveRows.value.filter(d=>d.pending);const items=pending.length?pending:liveRows.value.slice(-3);return items.length?items[rotation.value%items.length]:null})
+const currentSummary=computed(()=>currentProcess.value?compactProcessSummary(currentProcess.value):(props.progress||'思考中…'))
 const loadingOlder=ref(false)
 async function loadEarlier(){
  const el=scroller.value
@@ -35,9 +40,9 @@ watch(()=>[props.messages,props.running],async()=>{await nextTick();if(!loadingO
       <template v-for="r in historyRows" :key="r.seq">
         <div v-if="r.day" class="chat-date-divider"><span>{{r.day}}</span></div>
         <div v-if="r.type==='process-group'" class="tool-wrap">
-          <details v-for="detail in r.details" :key="detail.seq" class="process-line">
-            <summary><el-icon :class="{'is-loading':r.pending&&detail.pending}"><Loading v-if="r.pending&&detail.pending"/><Tools v-else/></el-icon><span>{{processSummary(detail,r.pending)}}</span></summary>
-            <div class="tool-content"><b>{{detail.label||detail.name||'执行记录'}}</b><template v-if="detail.input"><small>输入</small><pre>{{detail.input}}</pre></template><pre>{{detail.text||'等待返回…'}}</pre></div>
+          <details class="process-line">
+            <summary><el-icon><Tools/></el-icon><span>执行记录 · {{r.details.length}} 项</span></summary>
+            <div v-for="detail in r.details" :key="detail.seq" class="tool-content"><b>{{processSummary(detail,false)}}</b><pre v-if="detail.input">{{detail.input}}</pre><pre>{{detail.text||'无输出'}}</pre></div>
           </details>
         </div>
         <div v-else-if="r.type==='tool'" class="tool-wrap">
@@ -45,25 +50,26 @@ watch(()=>[props.messages,props.running],async()=>{await nextTick();if(!loadingO
             <div class="tool-content"><template v-if="r.input"><b>输入</b><pre>{{r.input}}</pre></template><b>结果</b><pre>{{r.text||'等待返回…'}}</pre></div>
           </el-collapse-item></el-collapse>
         </div>
-        <p v-else-if="r.type==='status'" class="turn-status">{{r.text}}</p>
+        <p v-else-if="r.type==='status'" class="turn-status" :title="r.text">{{r.text}}</p>
         <div v-else :class="['message-row',['user','message.created'].includes(r.type)?'from-user':'from-agent']">
           <el-avatar class="avatar" :size="32" shape="square">{{['user','message.created'].includes(r.type)?'我':(r.label||'AI').slice(0,2)}}</el-avatar>
-          <div class="message-content"><span class="sender">{{r.label}}<time v-if="r.timestamp" :datetime="r.timestamp" :title="new Date(r.timestamp).toLocaleString()">{{messageClock(r.timestamp)}}</time></span><div :class="['bubble',{'failure':['failed','agent.error'].includes(r.type)}]"><MarkdownText :text="r.text" /></div></div>
+          <div class="message-content"><span class="sender">{{r.label}}<time v-if="r.timestamp" :datetime="r.timestamp" :title="new Date(r.timestamp).toLocaleString()">{{messageClock(r.timestamp)}}</time></span><div :class="['bubble',{'failure':['failed','agent.error'].includes(r.type)}]"><MessageBody :text="r.text" /></div></div>
         </div>
       </template>
 
     </div>
   </div>
   <div v-if="running" class="live-process" aria-live="polite">
-    <details v-for="detail in liveRows" :key="detail.seq" class="process-line">
-      <summary><el-icon :class="{'is-loading':detail.pending}"><Loading v-if="detail.pending"/><Tools v-else/></el-icon><span>{{processSummary(detail,true)}}</span></summary>
-      <div class="tool-content"><pre v-if="detail.input">{{detail.input}}</pre><pre>{{detail.text||'等待返回…'}}</pre></div>
+    <details class="process-line live-tool-status">
+      <summary><el-icon :class="{'is-loading':!currentProcess||currentProcess.pending}"><Loading v-if="!currentProcess||currentProcess.pending"/><Check v-else/></el-icon><span class="rotating-status">{{currentSummary}}</span></summary>
+      <div v-for="detail in liveRows" :key="detail.seq" class="tool-content"><b>{{processSummary(detail,true)}}</b><pre v-if="detail.input">{{detail.input}}</pre><pre>{{detail.text||'等待返回…'}}</pre></div>
     </details>
-    <p v-if="!liveRows.some(d=>d.pending)" class="thinking" role="status"><el-icon class="is-loading"><Loading/></el-icon> {{progress||'思考中…'}}</p>
   </div>
 </template>
 
 <style scoped>.live-process{width:calc(100% - 56px);max-width:940px;align-self:center;max-height:160px;overflow:auto;flex-shrink:0;padding:0 16px}.live-process .thinking{margin:5px 0;font-size:13px}@media(max-width:750px){.live-process{width:calc(100% - 24px)}}</style>
-<style scoped>.messages{overflow-anchor:none}.history-status{text-align:center;color:var(--muted);font-size:12px;margin:0 0 14px} .process-line{color:var(--muted);font-size:13px;margin:5px 0}.process-line summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;padding:4px 0;min-width:0}.process-line summary::-webkit-details-marker{display:none}.process-line summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.process-line[open] summary{color:var(--text)}.process-line .el-icon{flex-shrink:0}.process-line .tool-content{margin:6px 0 12px 22px}</style>
+<style scoped>.messages{overflow-anchor:none}.history-status{text-align:center;color:var(--muted);font-size:12px;margin:0 0 14px} .process-line{color:var(--muted);font-size:13px;margin:5px 0}.process-line summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;padding:4px 0;min-width:0}.process-line summary::-webkit-details-marker{display:none}.process-line summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.process-line[open] summary{color:var(--text)}.process-line .el-icon{flex-shrink:0}.process-line .tool-content{margin:4px 0 6px 18px;padding:4px 8px;border-left:1px solid var(--line)}.tool-content{padding:8px 10px;line-height:1.4}.tool-content b{display:block;font-size:11px;line-height:1.4;font-weight:500}.tool-content pre{margin:4px 0 6px;padding:6px 8px;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow-wrap:normal;tab-size:2;max-height:240px;overflow:auto;letter-spacing:normal}.tool-content pre:last-child{margin-bottom:0}</style>
 
 <style scoped>.execution-status{flex-shrink:0;padding:8px 24px;color:var(--muted);font-size:12px;border-top:1px solid var(--line)}</style>
+
+<style scoped>.rotating-status{display:block;min-height:20px;line-height:20px}.turn-status{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:20px;margin-block:4px}</style>

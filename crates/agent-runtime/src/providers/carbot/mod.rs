@@ -15,3 +15,7 @@ pub(crate) use runtime::Runtime;
 
 #[cfg(test)]
 mod context_tests;
+#[cfg(test)]
+mod image_tests;
+#[cfg(test)]
+mod intelligent_tests;

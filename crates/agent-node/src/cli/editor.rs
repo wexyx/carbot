@@ -2,6 +2,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub(super) const COMMANDS: &[&str] = &[
     "/help",
+    "/update",
+    "/attach",
+    "/detach",
     "/manage",
     "/back",
     "/members",

@@ -1,5 +1,12 @@
 /// Lossy context projection. Original conversation logs must remain unchanged.
 pub trait CompressionStrategy: Send + Sync {
+    fn summary_plan(
+        &self,
+        _history: &[serde_json::Value],
+        _max_bytes: usize,
+    ) -> Result<Option<super::SummaryPlan>, String> {
+        Ok(None)
+    }
     fn compress(&self, text: &str, max_bytes: usize) -> Result<String, String>;
 }
 

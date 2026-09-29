@@ -1,7 +1,7 @@
 <script setup>
 import {Setting,Sunny,Moon,Plus,Refresh,Menu,ChatDotRound,User,Connection} from '@element-plus/icons-vue'
 import {messageId} from './message-id.js'
-import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, watch, provide, onBeforeUnmount, onMounted } from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import { createAgentConnection, normalizeAgentUrl } from './agent-api.js'
 import ApprovalCard from './ApprovalCard.vue'
@@ -16,6 +16,8 @@ import NetworkConfiguration from './NetworkConfiguration.vue'
 import {commandSuggestions,validateGroupCommand} from './group-commands.js'
 import MarkdownText from './MarkdownText.vue'
 import ChatMessages from './ChatMessages.vue'
+import AttachmentPicker from './AttachmentPicker.vue'
+import {attachmentMessage} from './attachments.js'
 import { conversationView } from './conversation-view.js'
 const route=useRoute(),router=useRouter()
 let routeVersion=0,loadedProject=''
@@ -23,8 +25,11 @@ const theme=ref(localStorage.getItem('carbot.theme')||'dark')
 watch(theme,value=>{document.documentElement.dataset.theme=value;document.documentElement.classList.toggle('dark',value==='dark');localStorage.setItem('carbot.theme',value)},{immediate:true})
 const address=ref(location.origin), connected=ref(false), error=ref(''), busy=ref(false)
 const nodeInfo=ref(null), connectedAddress=ref('')
+provide('carbotAddress',connectedAddress)
 const connectionHost=computed(()=>{try{return new URL(connectedAddress.value).host}catch{return '未连接'}})
 const projects=ref([]), project=ref(''), groups=ref([]), sessions=ref([]), selected=ref(''), session=ref(''), records=ref([]), text=ref('')
+const attachments=ref([]),attachmentPicker=ref(null),uploading=ref(false)
+watch([project,selected],()=>{attachments.value=[];uploading.value=false})
 const agentsRefreshing=ref(false)
 async function refreshAgents(){if(agentsRefreshing.value)return;agentsRefreshing.value=true;try{await perform(()=>refresh(true))}finally{agentsRefreshing.value=false}}
 const networkOpen=ref(false)
@@ -166,9 +171,10 @@ async function resetContext(){
   }finally{busy.value=false}
 }
 async function send(){
-  const content=text.value,chat=selected.value,p=project.value,c=connection
+  const draft=text.value,content=attachmentMessage(draft,attachments.value),chat=selected.value,p=project.value,c=connection
   const isCommand=content.trim()==='/new'||(chat!=='admin'&&content.trim().startsWith('/'))
-  if(!content.trim()||busy.value||(running.value&&!isCommand))return
+  if(!content.trim()||busy.value||uploading.value||(running.value&&!isCommand))return
+  if(isCommand&&attachments.value.length)throw new Error('附件请与普通消息一起发送，不能附在命令上')
   const same=()=>connection===c&&selected.value===chat&&project.value===p
   busy.value=true;text.value=''
   try{
@@ -193,6 +199,7 @@ async function send(){
       session.value=row.id
     }
     if(!same())return
+    attachments.value=[]
     refresh().catch(e=>{if(same()&&e.name!=='AbortError')error.value=e.message})
     // The send has been accepted. Metadata failures must not restore/re-send this message.
     c.request(`/v1/repl/${p}/chats/${encodeURIComponent(chat)}/logs?limit=1`).then(current=>{
@@ -200,7 +207,7 @@ async function send(){
       current.events?.forEach(add);logFiles.value=current.files
       if(chat!=='admin'){session.value=current.active_run||session.value;running.value=!!current.active_run}
     }).catch(e=>{if(same()&&e.name!=='AbortError')error.value='消息已提交，但刷新记录失败：'+e.message})
-  }catch(e){if(same()){pendingMessage.value=null;running.value=false;if(!text.value)text.value=content}throw e}finally{busy.value=false}
+  }catch(e){if(same()){pendingMessage.value=null;running.value=false;if(!text.value)text.value=draft}throw e}finally{busy.value=false}
 }
 async function interrupt(){
   if(!session.value)return
@@ -232,14 +239,14 @@ onBeforeUnmount(close)
 
       <div v-if="error" role="alert" class="error-banner">{{error}}<el-button type="default" native-type="button" class="icon-button" aria-label="关闭提示" @click="error=''">×</el-button></div>
       <ChatMessages :has-more="hasMore" :load-older="older" @history-error="error=$event" :key="topicId||selected" :messages="messages" :running="running" :progress="progress" :management="selected==='admin'" @suggest="value=>text=value" />
-      <div class="composer-area">
+      <div class="composer-area" @dragover.prevent @drop="attachmentPicker?.drop($event)" @paste="attachmentPicker?.paste($event)">
       <div v-if="commandReply" class="command-reply"><el-button type="default" native-type="button" class="icon-button" aria-label="关闭命令结果" @click="commandReply=''">×</el-button><MarkdownText :text="commandReply" /><small>/add-agent PATH [角色] · /remove-agent PATH · /agent PATH role 新角色 · /help</small></div>
         <div class="composer-feedback">
           <ApprovalCard v-for="a in approvals" :key="a.id" :item="a" @decide="allow=>perform(()=>decide(a,allow))"/>
           <ApprovalCard v-for="a in visiblePaths" :key="a.id" :item="a" workspace @conversation="perform(()=>decide(a,true,true,true))" @decide="allow=>perform(()=>decide(a,allow,true))"/>
         </div>
         
-<div v-if="suggestions.length" class="command-suggestions" aria-label="群聊命令提示"><el-button type="primary" native-type="button" v-for="item in suggestions" :key="item.name" @click="insertCommand(['/agents','/help'].includes(item.name)?item.name:item.name+' ')"><code>{{item.usage}}</code><span>{{item.description}}</span></el-button></div><el-form class="composer" @submit.prevent="perform(send)" label-position="top"><el-input type="textarea" v-model="text" @keydown="enter" :disabled="!connected||!project" aria-label="消息"  :placeholder="selected==='admin'?'输入管理指令或问题…':'发送消息，或 /add-agent、/remove-agent、/agent…'" rows="3"></el-input><div class="composer-toolbar"><div class="composer-left"><PermissionControl v-if="selectedGroup?.body.policy.members.length===1&&selectedGroup.body.policy.members[0].path.length===1&&managedAgents.some(a=>a.kind==='local'&&a.id===selectedGroup.body.policy.members[0].path[0])" compact :project="project" :agent="selectedGroup.body.policy.members[0].path[0]" :request="apiRequest"/><el-button type="default" :disabled="!connected||busy||running" @click="perform(resetContext)" title="不删除历史记录，仅重置后续对话上下文">重置上下文</el-button></div><el-button type="default" native-type="button" v-if="running&&!(selected!=='admin'&&text.trim().startsWith('/'))" class="secondary" :disabled="busy" @click="perform(interrupt)">{{busy?'发送中…':'■ 停止生成'}}</el-button><el-button type="primary" native-type="button" @click="perform(send)" v-else :loading="busy" :disabled="!connected||!project||busy||!text.trim()" class="send-button">发送 ↑</el-button></div></el-form><p class="composer-note">数据保存在当前 Agent · 重要操作会先征求你的确认</p></div>
+<div v-if="suggestions.length" class="command-suggestions" aria-label="群聊命令提示"><el-button type="primary" native-type="button" v-for="item in suggestions" :key="item.name" @click="insertCommand(['/agents','/help'].includes(item.name)?item.name:item.name+' ')"><code>{{item.usage}}</code><span>{{item.description}}</span></el-button></div><el-form class="composer" @submit.prevent="perform(send)" label-position="top"><el-input type="textarea" v-model="text" @keydown="enter" :disabled="!connected||!project" aria-label="消息"  :placeholder="selected==='admin'?'输入管理指令或问题…':'发送消息，或 /add-agent、/remove-agent、/agent…'" rows="3"></el-input><div class="composer-toolbar"><div class="composer-left"><PermissionControl v-if="selectedGroup?.body.policy.members.length===1&&selectedGroup.body.policy.members[0].path.length===1&&managedAgents.some(a=>a.kind==='local'&&a.id===selectedGroup.body.policy.members[0].path[0])" compact :project="project" :agent="selectedGroup.body.policy.members[0].path[0]" :request="apiRequest"/><el-button type="default" :disabled="!connected||busy||running" @click="perform(resetContext)" title="不删除历史记录，仅重置后续对话上下文">重置上下文</el-button></div><AttachmentPicker :key="project+':'+selected" ref="attachmentPicker" v-model="attachments" :request="apiRequest" :disabled="!connected||!project||busy||running" @uploading="uploading=$event" @error="error=$event"/><el-button type="default" native-type="button" v-if="running&&!(selected!=='admin'&&text.trim().startsWith('/'))" class="secondary" :disabled="busy" @click="perform(interrupt)">{{busy?'发送中…':'■ 停止生成'}}</el-button><el-button type="primary" native-type="button" @click="perform(send)" v-else :loading="busy" :disabled="!connected||!project||busy||uploading||(!text.trim()&&!attachments.length)" class="send-button">发送 ↑</el-button></div></el-form><p class="composer-note">数据保存在当前 Agent · 重要操作会先征求你的确认</p></div>
     </section>
     <section v-else-if="!agentsOpen&&!networkOpen&&!toolsOpen&&!skillsOpen&&!allowlistOpen" class="empty-project"><el-button type="default" native-type="button" class="secondary mobile-toggle" @click="mobileList=true">查看项目与设置</el-button><h2>项目</h2><p>创建一个项目，邀请 Agent 开始协作。</p><el-button type="primary" native-type="button" :disabled="!connected||!project" @click="openPanel('new-group')">＋ 创建项目</el-button></section>
     <NetworkConfiguration v-if="networkOpen" :project="project" :request="apiRequest" @close="closePanel"/>
@@ -261,4 +268,4 @@ onBeforeUnmount(close)
   </main>
 </template>
 
-<style scoped>.chat-list-row{display:flex;align-items:center;min-width:0}.chat-list-row>.agent-choice{flex:1;min-width:0}.chat-list-row :deep(.chat-menu){padding:6px;margin:0}</style>
+<style scoped>.chat-list-row{position:relative;display:flex;align-items:center;min-width:0}.chat-list-row>.agent-choice{flex:1;min-width:0;padding-right:42px}.chat-list-row :deep(.el-dropdown){position:absolute;right:8px;top:50%;transform:translateY(-50%)}.chat-list-row :deep(.chat-menu){padding:6px;margin:0}</style>

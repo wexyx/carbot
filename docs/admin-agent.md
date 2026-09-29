@@ -9,7 +9,7 @@ carbot 终端 ──┘                                               │
                                                        业务 Skill + Tool
 ```
 
-两套能力包复用 AgentRuntime、Tool trait、Inventory、SkillCatalog 和事件持久化，不复制 Harness 或 Tool 调用逻辑。AdminAgent 支持 Carbot、Codex、Claude 和测试用 Mock。CLI Provider 通过共享 ToolRuntime 的 JSON 工具调用循环调用同一套 management 注册表，不另建管理协议。运行目录是独立临时目录，不是业务工作目录；工厂固定 Codex 为 read-only、Claude 为 plan，外层仍使用原生目录沙箱。CLI 的认证文件读取仍需要目录策略授权，或预先提供对应 CLI 的环境认证信息。
+两套能力包复用 AgentRuntime、Tool trait、Inventory、SkillCatalog 和事件持久化，不复制 Harness 或 Tool 调用逻辑。AdminAgent 支持 Carbot、Codex、Claude 和测试用 Mock。CLI Provider 通过共享 ToolRuntime 的 JSON 工具调用循环调用同一套 management 注册表，不另建管理协议。运行目录是独立临时目录，不是业务工作目录；工厂固定 Codex 为 read-only、Claude 为 plan，不再套 Carbot 外层系统沙箱。CLI 的认证文件读取仍需要目录策略授权，或预先提供对应 CLI 的环境认证信息。
 
 缺少或无效配置时，终端启动自动进入配置向导；运行后 `/admin-config` 和 Web 的「AdminAgent 配置」可切换 Provider。配置保存在数据目录下的 default-agent.json（0600，明文密钥），环境变量优先。基础配置只允许用户操作，不注册为模型工具。切换时拒绝存在活跃管理任务的情况，保存成功后新消息使用新配置；历史不删除。无终端时配置错误返回非零退出码。
 
@@ -72,4 +72,4 @@ A2A 保留 /v1/client/register、connect、events、control-results 等机器协
 
 当前仍为个人/可信节点管理员模型，不是多租户 RBAC。所有持有管理口令的用户都能切换项目；项目隔离限制的是会话和工具数据上下文，不是不同管理员账号之间的授权。运行状态和文件存储有规模上限；没有宣称任意第三方模型不会受到提示注入影响。
 
-原生执行沙箱提供工作目录和显式批准路径访问，系统运行库及进程启动需要的目录遍历例外仍存在；网络默认按策略允许，不等同容器级资源配额。Linux 原生沙箱依赖 bubblewrap，容器中是否允许 user namespace 取决于宿主配置；不可用时失败，不回退为不隔离执行。
+执行器直接启动本机进程，工作目录不构成安全边界。操作确认、白名单、取消和进程组清理仍保留；获准的脚本可以访问当前系统用户有权限的目录外文件。

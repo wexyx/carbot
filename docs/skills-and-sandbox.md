@@ -1,41 +1,36 @@
-# Skill 与原生目录沙箱
+# Skill 与本机执行
 
-两套能力包共用 Tool / Skill 框架，加载不同实例：
-- AdminAgent：management_skills + 内置 management-guide，仅管理工具与 Skill 读取器。
-- 业务 Agent：项目 skills + 文件/受控 Python 工具，没有管理工具。
+管理能力与项目能力共用 Tool / Skill 框架，分别加载自己的能力目录。工具通过宏注册，Skill 通过目录加载。
 
-工具名称就是宏声明的注册名，例如 skill_read、skill_file、python_run。没有旧名称转换或额外手写注册表。
-读取 Skill 不代表授权运行代码。Python 需要本次 ToolSession 已读取对应 Skill、宿主开关开启、Skill 自身 allow_python 为真，以及执行 profile 在宿主白名单内。
+读取 Skill 不代表授权运行代码。Python 需要当前 ToolSession 已读取对应 Skill、宿主开关开启、Skill 自身 allow_python 为真，以及执行 profile 在宿主白名单内。
 
 ## 启动策略
 
 ```bash
 export CARBOT_ALLOW_SKILL_PYTHON=1
-export CARBOT_SANDBOX_PROFILES_JSON='[{"id":"default","network":"host","timeout_seconds":30}]'
-export CARBOT_SANDBOX_PROFILE=default
-export CARBOT_SANDBOX_ALLOWED_PROFILES=default
-./carbot --workdir /absolute/project --outside-access ask
+export CARBOT_EXECUTION_PROFILES_JSON='[{"id":"default","network":"host","timeout_seconds":30}]'
+export CARBOT_EXECUTION_PROFILE=default
+export CARBOT_EXECUTION_ALLOWED_PROFILES=default
+carbot --workdir /absolute/project --outside-access ask
 ```
 
-Python 可通过 AGENT_PYTHON_BIN 指定，默认解析 python3。Profile 只保留原生后端真实支持的字段：id、network、timeout_seconds、secret_env。废弃字段会报错，不能继续传 image / runtime / memory_mb / cpus / pids / scratch_mb。
+原 CARBOT_SANDBOX_* 配置名保留为兼容别名，新配置优先。它们只配置执行策略，不再启用系统沙箱。
+Python 通过 AGENT_PYTHON_BIN 指定，默认 python3。Profile 支持 id、network、timeout_seconds、secret_env。
+network 只能是 host；旧 none 配置会明确报错，不会假装仍能隔离网络。
+timeout_seconds 为 1..120，限制单次工具执行而不是整个对话。最多四个执行任务并发，输出上限 64 KiB；保留 CPU 时间、单文件大小等进程资源限制。
 
-network 为 host 或 none；默认允许网络，不会因为启用目录隔离就自动断网。默认没有注入任何秘密环境变量。
-timeout_seconds 为 1..120。最多四个脚本并发，输出上限 64 KiB，CPU 时间和单文件写入大小另受进程限制；这些限制不是容器资源配额或整棵子进程树的内存限额。
+## 执行边界
 
-## 目录规则
+Carbot 不再使用 sandbox-exec 或 bubblewrap。Shell、Python 和 Skill 在指定工作目录中直接运行，具有当前系统账号的文件和网络权限，包括工作目录外文件。工作目录不是隔离边界。
 
-工作目录读写由原生 OS 沙箱限制。macOS 使用 sandbox-exec；Linux 使用 bubblewrap/user namespace。系统运行库、解释器和启动需要的精确祖先目录有只读例外。
-Python 的 cwd 是指定工作目录；Skill 包先暂存于隔离运行目录，再以绝对路径执行。临时 HOME 与 TMPDIR 不使用真实用户目录。
-宿主数据目录被保护，避免业务 Agent 直接读取管理密钥或历史数据库文件。
+操作确认、命令白名单、Python 启用开关仍然有效。拒绝确认不会启动命令；允许执行不代表程序内部的每次文件访问都会再询问。文件工具自己的目录外访问策略（deny / ask）仍保留，但无法约束 Shell 或 Python 内部的系统调用。
 
-目录外路径默认拒绝。ask 模式下，统一文件工具可请求一次性允许。Python 通过 python_run 的 access 数组预声明额外路径：
-`{"path":"/absolute/extra","write":false}`。不自动重跑已经因权限失败而可能产生副作用的脚本。
-确认过期、拒绝、取消或目标路径变化均失败。通用 Python 不会在每个系统调用弹窗，未事先授权的访问由 OS 拒绝。
+执行器继续使用临时 HOME/TMPDIR 和经过筛选的环境变量，避免自动继承无关密钥；这不是文件访问隔离。Skill 文件暂存后执行并自动清理。上传附件的执行副本位于工作目录 .carbot/tmp/（命名实例为 .carbot_<别名>/tmp/），原件保留在实例数据目录。
 
-Codex / Claude 子进程也使用相同原生目录后端。真实登录凭据在工作目录外时需要单次导入授权；API Key 模式仅传所选 Provider 所需环境变量。实际厂商 CLI 的所有版本和登录方式尚未逐一验证。
+Codex / Claude 不再套 Carbot 的系统沙箱。保留现有 Provider 权限模式映射：ask/auto 使用 Codex read-only、Claude plan；只有用户明确选择 full 时才使用原有更宽松模式。登录凭据导入仍经过文件访问授权，未强制关闭厂商自带安全机制。Chromium 自身沙箱保留。
 
 ## 生命周期与验证
 
-没有独立沙箱 HTTP 服务、镜像、容器清理队列或外部执行后端。进程内 supervisor 管理并发、超时、调用者取消和关闭；执行 future 的 RAII 负责终止进程组和清理暂存目录。
+execution 模块的进程内 supervisor 管理并发、超时、调用者取消和关闭。RAII 清理进程组及暂存目录，取消任务会终止同进程组的子进程；主动脱离进程组的程序不在此保证内。
 
-测试覆盖真实 macOS 文件边界与原生 Python Skill 执行，模型和 Codex 协议使用本机替身。Linux 分支需在 Linux 环境验证，不把 macOS 结果等同为 Linux 隔离证明。
+测试覆盖本机 Shell/Python 的网络和目录外文件访问、任务取消后的子进程清理，以及审批与 Provider 协议。真实厂商 CLI 的所有版本和登录方式未逐一验证。

@@ -124,6 +124,8 @@ pub(crate) async fn events(
 pub(crate) struct FilePage {
     #[serde(default)]
     offset: u64,
+    from_line: Option<u64>,
+    to_line: Option<u64>,
 }
 pub(crate) async fn file(
     Path((p, chat, name)): Path<(Uuid, String, String)>,
@@ -131,6 +133,29 @@ pub(crate) async fn file(
     Extension(m): Extension<Arc<Manager>>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let chat = key(&m, p, &chat).await.map_err(control::api_error)?;
+    if page.from_line.is_some() || page.to_line.is_some() {
+        if page.offset != 0 {
+            return Err(control::api_error(
+                "offset and line range cannot be combined".into(),
+            ));
+        }
+        return m
+            .core()
+            .state()
+            .store
+            .logs()
+            .read_lines(
+                p,
+                chat,
+                Some(name),
+                page.from_line.unwrap_or(1),
+                page.to_line
+                    .unwrap_or_else(|| page.from_line.unwrap_or(1).saturating_add(99)),
+            )
+            .await
+            .map(Json)
+            .map_err(control::api_error);
+    }
     m.core()
         .state()
         .store

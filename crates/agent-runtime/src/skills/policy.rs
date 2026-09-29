@@ -1,4 +1,4 @@
-/// Operator-controlled policy for the in-process sandbox supervisor.
+/// Operator-controlled policy for the in-process execution supervisor.
 #[derive(Clone)]
 pub struct ExecutionPolicy {
     profile: String,
@@ -8,7 +8,7 @@ pub struct ExecutionPolicy {
 impl ExecutionPolicy {
     pub fn new(profile: String, allow_python: bool) -> Result<Self, String> {
         if profile.is_empty() {
-            return Err("sandbox profile required".into());
+            return Err("execution profile required".into());
         }
         Ok(Self {
             allowed_profiles: vec![profile.clone()],
@@ -18,10 +18,14 @@ impl ExecutionPolicy {
     }
     pub fn from_env() -> Result<Self, String> {
         let policy = Self::new(
-            std::env::var("CARBOT_SANDBOX_PROFILE").unwrap_or_else(|_| "default".into()),
+            std::env::var("CARBOT_EXECUTION_PROFILE")
+                .or_else(|_| std::env::var("CARBOT_SANDBOX_PROFILE"))
+                .unwrap_or_else(|_| "default".into()),
             std::env::var("CARBOT_ALLOW_SKILL_PYTHON").as_deref() == Ok("1"),
         )?;
-        if let Ok(value) = std::env::var("CARBOT_SANDBOX_ALLOWED_PROFILES") {
+        if let Ok(value) = std::env::var("CARBOT_EXECUTION_ALLOWED_PROFILES")
+            .or_else(|_| std::env::var("CARBOT_SANDBOX_ALLOWED_PROFILES"))
+        {
             if !value.trim().is_empty() {
                 return policy.with_allowed_profiles(
                     value.split(',').map(|v| v.trim().to_owned()).collect(),
@@ -43,7 +47,7 @@ impl ExecutionPolicy {
             })
         {
             return Err(
-                "invalid sandbox profile allowlist; it must include the default profile".into(),
+                "invalid execution profile allowlist; it must include the default profile".into(),
             );
         }
         self.allowed_profiles = profiles;

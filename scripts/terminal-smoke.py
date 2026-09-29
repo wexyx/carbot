@@ -8,21 +8,25 @@ import select
 import shutil
 import signal
 import struct
+import subprocess
 import tempfile
 import termios
 import time
+from terminal_screen import snapshot
 
 root = pathlib.Path(__file__).resolve().parent.parent
+version = subprocess.check_output([str(root / "target/debug/agent-node"), "--version"]).strip().removeprefix(b"Carbot ")
 directory = tempfile.mkdtemp(prefix="carbot-terminal-")
 pid, master = pty.fork()
 if pid == 0:
     os.chdir(directory)
     os.execve(str(root / "target/debug/agent-node"), ["agent-node", "--cli"], {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TERM": "xterm-256color",
-        "ADMIN_AGENT_PROVIDER": "mock", "CARBOT_DATA_DIR": directory,
+        "BIND_ADDR": "127.0.0.1:0", "ADMIN_AGENT_PROVIDER": "mock", "CARBOT_DATA_DIR": directory,
     })
 
-fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 110, 0, 0))
+columns = int(os.environ.get("CARBOT_TEST_COLUMNS", "110"))
+fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 28, columns, 0, 0))
 output = bytearray()
 position = 0
 
@@ -42,10 +46,20 @@ def send(text):
     os.write(master, text.encode())
 
 try:
-    wait_for("CARBOT")
-    assert output.index("直接输入任务".encode()) < output.index(b"CARBOT"), "session metadata must follow the chat/input area"
+    wait_for("请求批准")
+    visible = snapshot(output, 28, columns)
+    assert visible[0].startswith("┌"), "startup lost its top border: " + repr(visible[:3])
+    assert visible[-1].startswith("│"), "session info must stay on the last row"
+    assert b"\x1b[2J\x1b[1;1H" in output, "startup must clear the screen and move to the top"
+    assert output.index(b"\x1b[2J") < output.index(version), "clear before the banner"
+    assert b"\x1b[27;1H" in output, "reserve two rows for input and footer without scrolling the banner"
+    assert b"\x1b[28;1H" not in output, "do not start the input region on the last row"
+    assert b"\x1b[?1049h" not in output, "preserve native terminal scrollback"
+    assert "直接输入任务".encode() not in output
+    assert "┌ text".encode() not in output
+    assert version in output and b"http://127.0.0.1:" in output
     assert b"\x1b[?1000h" not in output, "native selection must be enabled by default"
-    assert b"\x1b[38;5;14m" in output or b"\x1b[36m" in output, "missing cyan theme"
+    assert b"\x1b[" in output, "missing terminal styling"
     send("/admin-c\t")
     wait_for("/admin-config ")
     send("\r")

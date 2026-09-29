@@ -6,10 +6,15 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-fn protect_path(resolved: &Path) -> Result<(), String> {
-    if std::fs::canonicalize(crate::paths::data_dir())
-        .ok()
-        .is_some_and(|data| resolved.starts_with(data))
+fn protect_path(resolved: &Path, root: &Path) -> Result<(), String> {
+    let temporary = crate::workspace::temporary_dir(root).ok();
+    let generated = temporary
+        .as_ref()
+        .and_then(|tmp| resolved.strip_prefix(tmp).ok());
+    if generated.is_none()
+        && std::fs::canonicalize(crate::paths::data_dir())
+            .ok()
+            .is_some_and(|data| resolved.starts_with(data))
     {
         return Err("Carbot private state cannot be read by model tools".into());
     }
@@ -18,7 +23,7 @@ fn protect_path(resolved: &Path) -> Result<(), String> {
     if std::fs::canonicalize(credentials).ok().as_ref() == Some(&resolved.to_path_buf()) {
         return Err("client credentials cannot be read by model tools".into());
     }
-    for part in resolved.components() {
+    for part in generated.unwrap_or(resolved).components() {
         let name = part.as_os_str().to_string_lossy();
         if name.starts_with(".env")
             || [
@@ -58,7 +63,10 @@ async fn resolve(context: &ToolContext, args: &Value, operation: &str) -> Result
         .join(&args.path)
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    protect_path(&path)?;
+    protect_path(&path, workspace.root())?;
+    if crate::attachments::PreparedAttachments::permits(&path) {
+        return Ok(path);
+    }
     workspace.authorize(Path::new(&args.path), operation).await
 }
 

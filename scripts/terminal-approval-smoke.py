@@ -45,7 +45,7 @@ if pid == 0:
     os.chdir(directory)
     os.execve(str(root / "target/debug/agent-node"), ["agent-node", "--cli"], {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TERM": "xterm-256color",
-        "ADMIN_AGENT_PROVIDER": "carbot", "CARBOT_DATA_DIR": directory, "AGENT_WORKDIR": directory,
+        "BIND_ADDR": "127.0.0.1:0", "ADMIN_AGENT_PROVIDER": "carbot", "CARBOT_DATA_DIR": directory, "AGENT_WORKDIR": directory,
         "MODEL_PROVIDER": "compatible", "MODEL_API": "chat", "MODEL_NAME": "fixture",
         "MODEL_API_KEY": "fixture", "MODEL_BASE_URL": "http://127.0.0.1:" + str(server.server_port),
     })
@@ -65,7 +65,7 @@ def wait_for(text, timeout=8):
 def send(text):
     os.write(master, text.encode())
 try:
-    wait_for("CARBOT")
+    wait_for("请求批准")
     assert b"\x1b[?1000h" not in output
     began = time.monotonic()
     send("permission-test\r")

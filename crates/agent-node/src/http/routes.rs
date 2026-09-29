@@ -9,6 +9,7 @@ pub(crate) fn router(state: AppState) -> Router {
 pub(crate) fn router_with_manager(state: AppState, manager: Arc<management::Manager>) -> Router {
     // Human-facing transport: conversations, read models and explicit permissions only.
     let interaction = Router::new()
+        .merge(crate::http::attachments::routes())
         .merge(crate::http::command_allowlist::routes(manager.clone()))
         .merge(crate::http::admin::routes(manager.clone()))
         .merge(crate::http::admin_configuration::routes(manager.clone()))

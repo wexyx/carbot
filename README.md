@@ -14,7 +14,7 @@ Carbot 可以使用自己的助手，也可以接入 Codex、Claude。你决定�
 curl -fsSL https://raw.githubusercontent.com/wexyx/crabot/main/install.sh | bash
 ```
 
-安装完成后，新开一个终端即可使用。**再次执行这条命令就是更新**，已有配置和聊天记录会保留，重启 Carbot 后使用新版本。
+安装完成后，新开一个终端即可使用。后续在 Carbot 对话中输入 **`/update`** 更新，已有配置和聊天记录会保留，重启 Carbot 后使用新版本。再次执行安装命令也可以更新。
 
 可用版本见 [下载页面](https://github.com/wexyx/crabot/releases)，安装要求见 [进阶说明](docs/advanced-startup.md#系统要求)。
 

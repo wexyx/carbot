@@ -72,4 +72,4 @@ for profile in "${profiles[@]}"; do
 done
 printf 'Installed %s to %s\nOpen a new terminal and run: carbot\n' "$version" "$destination"
 case ":$PATH:" in *":$prefix/bin:"*) echo 'This terminal already has the command directory in PATH; you can run carbot now.';; *) printf 'Without opening a new terminal, run: %s/bin/carbot\n' "$prefix";; esac
-echo 'No Rust/Node.js required. Linux command isolation needs bubblewrap; Python and vendor CLIs are optional separate dependencies.'
+echo 'Update later inside Carbot with: /update. Restart Carbot to use the new version. Python and vendor CLIs are optional separate dependencies.'

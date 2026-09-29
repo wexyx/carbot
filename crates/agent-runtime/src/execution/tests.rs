@@ -1,7 +1,7 @@
 use super::{
-    executor::{ExecutionFuture, SandboxExecutor},
+    executor::{ExecutionFuture, ProcessExecutor},
     profile::Profile,
-    service::Sandbox,
+    service::ExecutionService,
 };
 use crate::skills::{ExecutionRequest, SkillDefinition};
 use serde_json::json;
@@ -24,7 +24,7 @@ impl Drop for Guard {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
 }
-impl SandboxExecutor for Fixture {
+impl ProcessExecutor for Fixture {
     fn execute<'a>(
         &'a self,
         _request: &'a ExecutionRequest,
@@ -40,7 +40,7 @@ impl SandboxExecutor for Fixture {
         })
     }
 }
-fn setup(hang: bool) -> (Arc<Sandbox>, Arc<Fixture>, ExecutionRequest) {
+fn setup(hang: bool) -> (Arc<ExecutionService>, Arc<Fixture>, ExecutionRequest) {
     let fixture = Arc::new(Fixture {
         entered: tokio::sync::Notify::new(),
         dropped: Arc::new(AtomicUsize::new(0)),
@@ -49,7 +49,7 @@ fn setup(hang: bool) -> (Arc<Sandbox>, Arc<Fixture>, ExecutionRequest) {
     let profile =
         serde_json::from_value(json!({"id":"default","network":"host","timeout_seconds":1}))
             .unwrap();
-    let sandbox = Arc::new(Sandbox::new(fixture.clone(), vec![profile]).unwrap());
+    let execution = Arc::new(ExecutionService::new(fixture.clone(), vec![profile]).unwrap());
     let skill = SkillDefinition::new(
         "test".into(),
         "test".into(),
@@ -69,53 +69,61 @@ fn setup(hang: bool) -> (Arc<Sandbox>, Arc<Fixture>, ExecutionRequest) {
         args: vec![],
         profile: "default".into(),
     };
-    (sandbox, fixture, request)
+    (execution, fixture, request)
 }
 #[tokio::test]
 async fn native_supervisor_cancellation_releases_execution_before_shutdown() {
-    let (sandbox, fixture, request) = setup(true);
+    let (execution, fixture, request) = setup(true);
     let task = {
-        let s = sandbox.clone();
+        let s = execution.clone();
         tokio::spawn(async move { s.execute(request).await })
     };
     tokio::time::timeout(Duration::from_secs(2), fixture.entered.notified())
         .await
         .unwrap();
     task.abort();
-    sandbox.shutdown().await;
+    execution.shutdown().await;
     assert_eq!(fixture.dropped.load(Ordering::SeqCst), 1);
 }
 #[tokio::test]
 async fn native_supervisor_timeout_and_shutdown_fail_closed() {
-    let (sandbox, fixture, request) = setup(true);
+    let (execution, fixture, request) = setup(true);
     assert!(
-        sandbox
+        execution
             .execute(request.clone())
             .await
             .unwrap_err()
             .contains("timed out")
     );
     assert_eq!(fixture.dropped.load(Ordering::SeqCst), 1);
-    sandbox.shutdown().await;
-    assert!(sandbox.execute(request).await.is_err());
+    execution.shutdown().await;
+    assert!(execution.execute(request).await.is_err());
 }
 #[tokio::test]
 async fn native_supervisor_success_and_unknown_profile() {
-    let (sandbox, fixture, request) = setup(false);
+    let (execution, fixture, request) = setup(false);
     assert_eq!(
-        sandbox.execute(request.clone()).await.unwrap()["stdout"],
+        execution.execute(request.clone()).await.unwrap()["stdout"],
         "ok"
     );
     assert_eq!(fixture.dropped.load(Ordering::SeqCst), 1);
     let mut invalid = request;
     invalid.profile = "unknown".into();
-    assert!(sandbox.execute(invalid).await.is_err());
+    assert!(execution.execute(invalid).await.is_err());
 }
 #[test]
 fn native_profile_rejects_retired_fields_and_unsafe_environment() {
     let base = json!({"id":"default","network":"host","timeout_seconds":30});
     let profile: Profile = serde_json::from_value(base.clone()).unwrap();
     profile.validate().unwrap();
+    let mut offline = profile.clone();
+    offline.network = "none".into();
+    assert!(
+        offline
+            .validate()
+            .unwrap_err()
+            .contains("no longer isolates")
+    );
     for field in [
         "image",
         "runtime",
@@ -145,28 +153,32 @@ fn native_profile_rejects_retired_fields_and_unsafe_environment() {
         );
     }
 }
-#[cfg(target_os = "macos")]
+
+#[cfg(unix)]
 #[tokio::test]
-async fn native_directory_boundary_denies_sibling_files_and_allows_workdir() {
+async fn cancellation_kills_spawned_children() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("work");
-    std::fs::create_dir(&root).unwrap();
-    let secret = dir.path().join("outside.txt");
-    std::fs::write(&secret, "private").unwrap();
-    let forbidden = dir.path().join("forbidden.txt");
-    let sandbox = super::native::NativeCommand::new().unwrap();
-    let mut command = sandbox
-        .command(std::path::Path::new("/bin/sh"), &root, &[], &[], false)
-        .unwrap();
-    command.args(["-c","printf inside > inside.txt; if cat \"$1\" >/dev/null 2>&1; then exit 12; fi; if (printf bad > \"$2\") 2>/dev/null; then exit 13; fi; exit 0","fixture"]).arg(&secret).arg(&forbidden);
-    let output = tokio::time::timeout(Duration::from_secs(5), command.output())
+    let root = dir.path().to_path_buf();
+    let task = tokio::spawn(async move {
+        let profile =
+            serde_json::from_value(json!({"id":"default","network":"host","timeout_seconds":10}))
+                .unwrap();
+        super::native::shell::execute(
+            root,
+            "(sleep 1; printf leaked > leaked) & printf ready > ready; wait".into(),
+            profile,
+        )
         .await
-        .unwrap()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        std::fs::read_to_string(root.join("inside.txt")).unwrap(),
-        "inside"
-    );
-    assert!(!forbidden.exists());
+    });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !dir.path().join("ready").exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    assert!(!dir.path().join("leaked").exists());
 }

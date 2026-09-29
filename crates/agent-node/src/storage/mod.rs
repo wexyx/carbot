@@ -9,3 +9,7 @@ pub(crate) use chat_log::ChatLog;
 mod chat_migration;
 
 mod log_file_reader;
+mod log_line_cache;
+mod log_line_index;
+#[cfg(test)]
+mod log_line_tests;

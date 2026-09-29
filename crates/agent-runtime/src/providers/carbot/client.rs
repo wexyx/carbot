@@ -27,13 +27,15 @@ impl ModelClient {
             protocol,
         })
     }
-    pub(super) fn prepare_context(
+    pub(super) async fn prepare_context(
         &self,
         history: &mut Vec<Value>,
         tools: &ToolRegistry,
         events: &mut (impl FnMut(RuntimeEvent) + Send),
     ) -> Result<(), String> {
-        let limit = self.config.context.input_limit(self.config.max_tokens)?;
+        let image_reserve =
+            crate::attachments::PreparedAttachments::images(|images| images.len() * 8192);
+        let limit = self.config.context.input_limit(self.config.max_tokens)?.checked_sub(image_reserve).ok_or("CONTEXT_LIMIT: images exceed context length; attach fewer images or increase context length")?;
         let size = |rows: &[Value]| -> Result<usize, String> {
             let request = self
                 .protocol
@@ -53,6 +55,57 @@ impl ModelClient {
         let mut available = limit
             .checked_sub(fixed + 1024)
             .ok_or("CONTEXT_LIMIT: system prompt and tool schemas exceed input budget")?;
+        let sources = crate::context::HistoryAccess::manifest().await;
+        if let Some(plan) = self
+            .config
+            .context
+            .summary_plan(history, available.saturating_sub(sources.len()))?
+        {
+            events(RuntimeEvent::ContextCheckpoint {
+                content: "正在智能压缩上下文…".into(),
+            });
+            let mut summary = String::new();
+            let mut remaining = plan.older();
+            while !remaining.is_empty() {
+                let mut chunk_limit = (limit / 2).max(256);
+                let (chunk, input) = loop {
+                    let chunk = crate::context::SummaryPlan::chunk(remaining, chunk_limit);
+                    let input = vec![
+                        serde_json::json!({"role":"user","content":plan.summary_request(&summary,chunk)}),
+                    ];
+                    if size(&input)? <= limit {
+                        break (chunk, input);
+                    }
+                    if chunk_limit <= 256 {
+                        return Err("CONTEXT_LIMIT: 摘要请求无法容纳于上下文长度".into());
+                    }
+                    chunk_limit /= 2;
+                };
+                let turn = self
+                    .request_turn(&input, &ToolRegistry::new(), &mut |_| {})
+                    .await?;
+                if !turn.calls().is_empty() {
+                    return Err("智能压缩期间模型请求了工具，摘要未应用".into());
+                }
+                summary = plan.validate(turn.text())?;
+                remaining = &remaining[chunk.len()..];
+            }
+            if summary.is_empty() {
+                summary=plan.validate(r#"{"goals":[],"constraints":[],"decisions":[],"completed":[],"pending":[],"risks":[],"references":[]}"#)?;
+            }
+            let candidate = plan.finish(&summary, &sources);
+            let after = size(&candidate)?;
+            if after > limit {
+                return Err("CONTEXT_LIMIT: 智能摘要仍超过上下文长度，原始上下文未修改".into());
+            }
+            *history = candidate;
+            events(RuntimeEvent::ContextCheckpoint {
+                content: format!(
+                    "Context compacted: 智能压缩 {before} -> {after}; summary={summary}; {sources}"
+                ),
+            });
+            return Ok(());
+        }
         // JSON escaping can expand excerpts. Measure the actual request before sending.
         for _ in 0..6 {
             let candidate = self.config.context.compact(history, available)?;
@@ -71,6 +124,15 @@ impl ModelClient {
         Err("CONTEXT_LIMIT: unable to fit request; use /new or increase context budget".into())
     }
     pub(super) async fn next_turn(
+        &self,
+        history: &[Value],
+        tools: &ToolRegistry,
+        events: &mut (impl FnMut(RuntimeEvent) + Send),
+    ) -> Result<Turn, String> {
+        let history = self.protocol.with_images(history);
+        self.request_turn(&history, tools, events).await
+    }
+    async fn request_turn(
         &self,
         history: &[Value],
         tools: &ToolRegistry,

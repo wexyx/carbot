@@ -10,7 +10,7 @@ pub(crate) async fn pending() -> Json<Value> {
 }
 pub(crate) async fn configuration() -> Json<Value> {
     Json(
-        json!({"workdir":agent_runtime::paths::workdir(),"outside_access":std::env::var("AGENT_OUTSIDE_ACCESS").unwrap_or_else(|_|"deny".into()),"backend":"native","mutable":false}),
+        json!({"workdir":agent_runtime::paths::workdir(),"outside_access":std::env::var("AGENT_OUTSIDE_ACCESS").unwrap_or_else(|_|"deny".into()),"backend":"host","filesystem_isolated":false,"mutable":false}),
     )
 }
 pub(crate) async fn decide(

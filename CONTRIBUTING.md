@@ -37,11 +37,14 @@ cargo test --workspace
 node --test apps/web/src/*.test.js scripts/*.test.mjs
 
 # 本地发行包示例（先构建 Web）
+export CARBOT_RELEASE_VERSION=v1.2.3
 cargo build --release --locked -p agent-node
 bash scripts/package-release.sh aarch64-apple-darwin
 ```
 
 推送版本标签会触发 `.github/workflows/release.yml`，构建各平台程序、Web 和 Skill，生成安装包及 SHA-256，并创建 Draft Release。维护者验证后正式发布，安装器才会将其作为可安装版本。SHA-256 是完整性校验，不等于代码签名；当前没有实现 macOS 公证或包签名。
+
+Release 构建将 tag 写入二进制，启动页和 `carbot --version` 显示同一版本。打包时校验版本与 tag 一致；已有安装包不会自动改变。未设置 `CARBOT_RELEASE_VERSION` 的本地构建显示 `v<Cargo 包版本>-dev`，不伪装成发行版。
 
 升级时重新运行安装脚本，安装器切换命令到新版本并保留旧版本目录和实例数据。详细安装配置见 [进阶安装与启动](docs/advanced-startup.md)。
 

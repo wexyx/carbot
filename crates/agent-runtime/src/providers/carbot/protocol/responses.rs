@@ -6,6 +6,9 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 pub(super) struct ResponsesProtocol;
 impl ModelProtocol for ResponsesProtocol {
+    fn image(&self, image: &crate::attachments::AttachmentImage) -> Value {
+        json!({"type":"input_image","image_url":format!("data:{};base64,{}",image.media_type,image.data)})
+    }
     fn tool(&self, d: &ToolDefinition) -> Value {
         json!({"type":"function","name":d.name(),"description":d.description(),"parameters":d.parameters(),"strict":false})
     }

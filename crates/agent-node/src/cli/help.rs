@@ -12,6 +12,9 @@ pub(super) const TEXT: &str = r##"carbot · 管理
   /connect URL             申请连接上游，需人工确认
   /server [status]          Server 状态
   /history                 恢复当前聊天；/tools [序号] 查看调用
+  /attach 文件路径         下一条消息附带文件或图片；SSH 下使用远端路径
+  /detach                  清空待发送附件，不删除原文件
+  /update                  下载最新版本，完成后重启生效
   /interrupt · /exit        打断 / 退出
 
 更多操作

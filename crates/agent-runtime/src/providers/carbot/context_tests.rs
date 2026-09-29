@@ -5,8 +5,8 @@ use super::{
 use crate::{RuntimeEvent, context::ContextBudget, tools::ToolRegistry};
 use serde_json::json;
 
-#[test]
-fn compaction_removes_native_tool_pairs_together_for_every_protocol() {
+#[tokio::test]
+async fn compaction_removes_native_tool_pairs_together_for_every_protocol() {
     for api in [ModelApi::Chat, ModelApi::Responses, ModelApi::Anthropic] {
         let client = ModelClient::new(HarnessConfig {
             context: ContextBudget::from_lookup(|key| {
@@ -17,7 +17,6 @@ fn compaction_removes_native_tool_pairs_together_for_every_protocol() {
             base: "http://127.0.0.1/v1".into(),
             key: "fixture".into(),
             model: "fixture".into(),
-            max_steps: 2,
             max_tokens: 1024,
             root: ".".into(),
         })
@@ -31,6 +30,7 @@ fn compaction_removes_native_tool_pairs_together_for_every_protocol() {
         let mut events = Vec::new();
         client
             .prepare_context(&mut history, &ToolRegistry::new(), &mut |e| events.push(e))
+            .await
             .unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0]["role"], "user");

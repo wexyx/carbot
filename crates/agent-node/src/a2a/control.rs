@@ -163,8 +163,11 @@ pub fn call<'a>(
             state.control_pending.lock().await.remove(&id);
             return Err("descendant queue full".into());
         }
-        let wait = if op == "task.run" { 600 } else { 60 };
-        let result = tokio::time::timeout(Duration::from_secs(wait), rx).await;
+        let result = if matches!(op.as_str(), "task.run" | "agent.invoke") {
+            Ok(rx.await)
+        } else {
+            tokio::time::timeout(Duration::from_secs(60), rx).await
+        };
         state.control_pending.lock().await.remove(&id);
         result
             .map_err(|_| "descendant RPC timed out")?

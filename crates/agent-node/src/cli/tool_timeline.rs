@@ -2,15 +2,14 @@ use serde_json::Value;
 #[derive(Default)]
 pub(super) struct ToolTimeline {
     entries: Vec<Entry>,
+    current_start: usize,
 }
 struct Entry {
-    marker: String,
     id: Option<String>,
     name: String,
     input: String,
     output: String,
     pending: bool,
-    expanded: bool,
 }
 fn shown(v: &Value) -> String {
     if let Some(s) = v.as_str() {
@@ -20,6 +19,52 @@ fn shown(v: &Value) -> String {
     }
 }
 impl ToolTimeline {
+    pub fn begin_turn(&mut self) {
+        self.current_start = self.entries.len();
+    }
+    pub fn status(&self, step: usize) -> Option<String> {
+        let entries = &self.entries[self.current_start.min(self.entries.len())..];
+        let pending = entries.iter().filter(|e| e.pending).collect::<Vec<_>>();
+        let items = if pending.is_empty() {
+            entries.iter().rev().take(3).collect::<Vec<_>>()
+        } else {
+            pending
+        };
+        if items.is_empty() {
+            return None;
+        }
+        let e = items[step % items.len()];
+        let input = serde_json::from_str::<Value>(&e.input).unwrap_or_default();
+        let command = input["command"]
+            .as_str()
+            .and_then(|s| s.split_whitespace().next())
+            .unwrap_or("");
+        let name = match e.name.as_str() {
+            "command_run" if !command.is_empty() => command
+                .rsplit('/')
+                .next()
+                .unwrap_or(command)
+                .trim_matches(['\'', '"']),
+            "python_run" => "python",
+            name => name,
+        };
+        let name = name
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(24)
+            .collect::<String>();
+        let name = if e.name == "command_run" && !command.is_empty() {
+            format!("command_run · {name}")
+        } else {
+            name
+        };
+        Some(format!(
+            "{} · {}",
+            if e.pending { "执行中" } else { "已完成" },
+            name
+        ))
+    }
+
     pub fn record(&mut self, row: &Value) -> Option<String> {
         let event = row.get("payload").unwrap_or(row);
         let kind = event["type"].as_str().unwrap_or("");
@@ -39,9 +84,7 @@ impl ToolTimeline {
             .or_else(|| data["id"].as_str())
             .map(str::to_owned);
         if kind.ends_with("started") {
-            let marker = format!("CARBOT_TOOL_{}", uuid::Uuid::new_v4().simple());
             self.entries.push(Entry {
-                marker: marker.clone(),
                 id,
                 name: data["name"].as_str().unwrap_or("tool").into(),
                 input: shown(
@@ -51,7 +94,6 @@ impl ToolTimeline {
                 ),
                 output: String::new(),
                 pending: true,
-                expanded: false,
             });
             Some(String::new())
         } else {
@@ -74,21 +116,9 @@ impl ToolTimeline {
                     entry.output.push_str("\n…输出已截断");
                 }
                 entry.pending = false;
-                return Some(format!("\n{}\n", entry.marker));
+                return Some(String::new());
             }
             Some(String::new())
-        }
-    }
-    #[cfg(test)]
-    pub fn toggle(&mut self, index: usize) {
-        if let Some(entry) = self.entries.get_mut(index) {
-            entry.expanded = !entry.expanded;
-        }
-    }
-    #[cfg(test)]
-    pub fn toggle_latest(&mut self) {
-        if let Some(index) = self.entries.len().checked_sub(1) {
-            self.toggle(index)
         }
     }
     pub fn details(&self, index: Option<usize>) -> String {
@@ -111,44 +141,6 @@ impl ToolTimeline {
             entry.output
         )
     }
-    pub fn render(&self, transcript: &str, width: usize) -> String {
-        let mut result = transcript.to_owned();
-        for (index, entry) in self.entries.iter().enumerate() {
-            if !result.contains(&entry.marker) {
-                continue;
-            }
-            let summary = format!(
-                "[工具 #{}] {} {} · {} · /tools 查看",
-                index + 1,
-                if entry.expanded { "▾" } else { "▸" },
-                entry.name.split_whitespace().collect::<Vec<_>>().join(" "),
-                if entry.pending {
-                    "执行中"
-                } else {
-                    "已完成"
-                }
-            );
-            let summary = super::screen::wrap(&summary, width)
-                .first()
-                .cloned()
-                .unwrap_or_default();
-            let detail = if entry.expanded {
-                format!(
-                    "\n\n输入\n\n{}\n\n输出\n\n{}\n",
-                    entry.input,
-                    if entry.pending {
-                        "等待返回…"
-                    } else {
-                        &entry.output
-                    }
-                )
-            } else {
-                String::new()
-            };
-            result = result.replace(&entry.marker, &format!("{summary}{detail}"));
-        }
-        result
-    }
 }
 #[cfg(test)]
 mod tests {
@@ -161,11 +153,10 @@ mod tests {
         let line = tools
             .record(&json!({"type":"tool_finished","call_id":"x","output":"many\nlines"}))
             .unwrap();
-        let compact = tools.render(&line, 80);
-        assert!(compact.contains("已完成"));
-        assert!(!compact.contains("many"));
-        assert_eq!(compact.trim().lines().count(), 1);
-        tools.toggle_latest();
-        assert!(tools.render(&line, 80).contains("many\nlines"));
+        assert!(line.is_empty());
+        assert!(tools.status(0).unwrap().contains("已完成"));
+        assert!(tools.details(None).contains("many\nlines"));
+        tools.begin_turn();
+        assert!(tools.status(0).is_none());
     }
 }

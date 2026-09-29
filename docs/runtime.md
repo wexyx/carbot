@@ -28,7 +28,7 @@ RuntimeFactory::from_env() 根据 AGENT_PROVIDER 创建；默认仍为 mock。Ru
 - providers/codex/、providers/claude/：各自的 config.rs、runtime.rs、parser.rs 和单元测试，厂商协议不混用。
 - providers/mock/：同样实现 Provider、经过相同工厂与生命周期包装；没有配置/协议需求时不创建空 config/parser 文件。
 - errors.rs：共享 token/context 不足判定。
-- skills/：与厂商无关的 SkillCatalog、资源校验和远程沙箱执行策略。部署与 API 见 [Skill 与沙箱](skills-and-sandbox.md)。
+- skills/：与厂商无关的 SkillCatalog、资源校验和本机执行策略。部署与 API 见 [Skill 与本机执行](skills-and-sandbox.md)。
 - tools/：统一 Tool 接口、宏注册工厂、运行时注册表和 ToolRuntime 桥接；Carbot 原生工具与 Skill 工具共用实现。见 [工具注册](tools.md)。
 - agent.rs：原有 run / run_with_provider 的兼容入口，只转发给工厂。
 

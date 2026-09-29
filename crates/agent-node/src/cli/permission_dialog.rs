@@ -87,7 +87,7 @@ impl PermissionDialog {
         }
         let width = usize::from(cols.saturating_sub(6)).min(82);
         let lines = super::screen::wrap(&format!("{}\n{}", item.title, item.detail), width);
-        let height = usize::from(rows.saturating_sub(11));
+        let height = usize::from(rows.saturating_sub(16)).max(1);
         let start = self.scroll.min(lines.len().saturating_sub(height));
         let detail = lines
             .into_iter()
@@ -96,14 +96,14 @@ impl PermissionDialog {
             .collect::<Vec<_>>()
             .join("\n");
         Some(format!(
-            "需要你的确认（{} 项待处理）\n{}\n↑↓ / PgUp / PgDn 查看详情\n{}拒绝    {}允许一次{}\n← → 选择，Enter 提交\n输入 确认 / 拒绝 后 Enter · Esc 稍后 · Ctrl+P 打开\n❯ {}",
+            "需要你的确认（{} 项待处理）\n{}\n{}拒绝\n{}允许一次{}\n↑↓ 选择 · Enter 确认 · PgUp/PgDn 查看详情\nEsc 稍后 · 输入 确认/拒绝：{}",
             self.pending.len(),
             detail,
             if self.selection == 0 { "› " } else { "  " },
             if self.selection == 1 { "› " } else { "  " },
             if item.conversation {
                 format!(
-                    "    {}本对话允许（所有命令，重置后失效）",
+                    "\n{}本对话允许（所有命令，重置后失效）",
                     if self.selection == 2 { "› " } else { "  " }
                 )
             } else {
@@ -118,15 +118,21 @@ impl PermissionDialog {
         }
         match key.code {
             KeyCode::Esc => self.hidden = true,
-            KeyCode::Up | KeyCode::PageUp => self.scroll(true),
-            KeyCode::Down | KeyCode::PageDown => self.scroll(false),
-            KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+            KeyCode::PageUp => self.scroll(true),
+            KeyCode::PageDown => self.scroll(false),
+            KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Tab
+            | KeyCode::BackTab => {
                 let count = if self.pending[0].conversation { 3 } else { 2 };
-                self.selection = if key.code == KeyCode::Left {
-                    (self.selection + count - 1) % count
-                } else {
-                    (self.selection + 1) % count
-                };
+                self.selection =
+                    if matches!(key.code, KeyCode::Left | KeyCode::Up | KeyCode::BackTab) {
+                        (self.selection + count - 1) % count
+                    } else {
+                        (self.selection + 1) % count
+                    };
                 self.input.clear();
             }
             KeyCode::Backspace => {
@@ -176,6 +182,27 @@ mod tests {
             title: "outside".into(),
             detail: "/private/test".into(),
         }
+    }
+    #[test]
+    fn vertical_navigation_selects_without_approving_and_wraps() {
+        let mut dialog = PermissionDialog::default();
+        dialog.update(vec![item()]);
+        assert!(
+            dialog
+                .key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+                .is_none()
+        );
+        assert_eq!(dialog.selection, 1);
+        dialog.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+        assert_eq!(dialog.selection, 1);
+        dialog.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        let (_, allow, conversation) = dialog
+            .key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .unwrap();
+        assert!(allow && conversation);
+        dialog.update(vec![item()]);
+        dialog.key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(dialog.selection, 2);
     }
     #[test]
     fn default_deny_and_typed_confirmation_are_explicit() {

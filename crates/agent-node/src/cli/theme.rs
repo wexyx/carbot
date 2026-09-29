@@ -1,6 +1,6 @@
 use crossterm::{
     queue,
-    style::{Color, Print, ResetColor, SetForegroundColor},
+    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
 };
 use std::io::Write;
 
@@ -15,8 +15,14 @@ impl Theme {
     }
     fn color(text: &str) -> Option<Color> {
         let text = text.trim_start();
-        if text.starts_with("▌") {
+        if text.starts_with("│ 有更新 ") || text.starts_with("│ 更新失败") {
+            Some(Color::Red)
+        } else if text.starts_with("│ 更新已安装") {
+            Some(Color::Green)
+        } else if text.starts_with("▌") {
             Some(Color::Cyan)
+        } else if text.starts_with("执行中 ·") {
+            Some(Color::DarkGrey)
         } else if text.starts_with("│") || text.starts_with("┌") || text.starts_with("└") {
             Some(Color::DarkGrey)
         } else if text.starts_with("错误")
@@ -47,20 +53,45 @@ impl Theme {
             None
         }
     }
+    pub(super) fn write_update(&self, out: &mut impl Write, text: &str) -> std::io::Result<()> {
+        let color = if text.starts_with("有更新") || text.starts_with("更新失败") {
+            Color::Red
+        } else if text.starts_with("更新已安装") {
+            Color::Green
+        } else {
+            Color::DarkGrey
+        };
+        if self.enabled {
+            queue!(out, SetForegroundColor(color), Print(text), ResetColor)
+        } else {
+            queue!(out, Print(text))
+        }
+    }
     pub(super) fn write(&self, out: &mut impl Write, text: &str) -> std::io::Result<()> {
+        let label = text.strip_prefix("› ").or_else(|| text.strip_prefix("  "));
         if self.enabled
-            && (text.starts_with("› 拒绝") || text.starts_with("  拒绝"))
-            && text.contains("允许一次")
+            && label.is_some_and(|s| {
+                s.starts_with("拒绝") || s.starts_with("允许一次") || s.starts_with("本对话允许")
+            })
         {
-            let split = text.find("允许一次").unwrap();
-            let (deny, allow) = text.split_at(split);
+            let color = if label.unwrap().starts_with("拒绝") {
+                Color::Red
+            } else {
+                Color::Green
+            };
+            if text.starts_with("› ") {
+                return queue!(
+                    out,
+                    SetBackgroundColor(color),
+                    SetForegroundColor(Color::Black),
+                    Print(text),
+                    ResetColor
+                );
+            }
             return queue!(
                 out,
-                SetForegroundColor(Color::Red),
-                Print(deny),
-                ResetColor,
-                SetForegroundColor(Color::Green),
-                Print(allow),
+                SetForegroundColor(Color::DarkGrey),
+                Print(text),
                 ResetColor
             );
         }
@@ -78,6 +109,11 @@ mod tests {
     fn semantic_colors_and_no_color_mode() {
         assert_eq!(Theme::color("│ 默认 Agent"), Some(Color::DarkGrey));
         assert_eq!(Theme::color("普通回复正文"), None);
+        assert_eq!(Theme::color("│ 有更新 v1.2.3 · /update"), Some(Color::Red));
+        assert_eq!(
+            Theme::color("执行中 · 12.3s · Esc 打断 · python"),
+            Some(Color::DarkGrey)
+        );
         for text in [
             "│ 默认 Agent",
             "你：hi",

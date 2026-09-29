@@ -1,3 +1,4 @@
+mod banner;
 mod commands;
 mod controller;
 mod default_project;
@@ -19,3 +20,8 @@ mod workbench_view;
 mod session_info;
 
 mod allowlist;
+
+mod update_check;
+mod updater;
+
+mod footer;

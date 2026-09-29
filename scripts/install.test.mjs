@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,mkdir,writeFile,readFile,rm,readdir} from 'node:fs/promises'
+import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,readlink,realpath} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {execFileSync,spawnSync} from 'node:child_process'
@@ -13,6 +13,8 @@ async function fixture(run){
     const home=join(root,'home'),assets=join(root,'assets'),bin=join(root,'bin'),bundle=join(root,'bundle/carbot')
     for(const path of [home,assets,bin,join(bundle,'bin'),join(bundle,'libexec'),join(bundle,'web'),join(bundle,'skills/system/management/management-guide')])await mkdir(path,{recursive:true})
     for(const path of ['bin/carbot','libexec/agent-node'])await writeFile(join(bundle,path),'#!/bin/sh\nprintf "installed-fixture\\n"\n',{mode:0o755})
+    await writeFile(join(bundle,'bin/carbot'),await readFile(resolve('scripts/release/carbot')),{mode:0o755})
+    await writeFile(join(bundle,'libexec/install.sh'),await readFile(installer))
     await writeFile(join(bundle,'web/index.html'),'fixture')
     await writeFile(join(bundle,'skills/system/management/management-guide/SKILL.md'),'fixture')
     const os=execFileSync('uname',['-s'],{encoding:'utf8'}).trim(),arch=execFileSync('uname',['-m'],{encoding:'utf8'}).trim()
@@ -25,6 +27,7 @@ async function fixture(run){
     await writeFile(join(bin,'curl'),`#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path'),args=process.argv.slice(2);
 const url=args.find(v=>v.startsWith('https://')),out=args[args.indexOf('-o')+1];
+if(url.endsWith('/latest')){process.stdout.write('https://github.com/wexyx/crabot/releases/tag/v0.0.1');process.exit(0)}
 fs.copyFileSync(path.join(process.env.FIXTURE_ASSETS,path.basename(url)),out);
 `,{mode:0o755})
     const prefix=join(home,"custom path '$install")
@@ -74,4 +77,25 @@ test('checksum failure does not create a command or change shell configuration',
   assert.notEqual(result.status,0)
   assert.match(result.stderr,/Checksum mismatch/)
   assert.deepEqual(await readdir(home),[])
+}))
+
+test('updater installer preserves the existing custom prefix and data, and rejects broken downloads',async()=>fixture(async({home,prefix,env,archive})=>{
+ const installed=spawnSync('bash',[installer],{env,encoding:'utf8'})
+ assert.equal(installed.status,0,installed.stderr)
+ const data=join(home,'.carbot')
+ await mkdir(data)
+ await writeFile(join(data,'state.jsonl'),'keep-history')
+ const command=join(prefix,'bin/carbot')
+ const previous=await readlink(command)
+ const updateEnv={...env,CARBOT_VERSION:'latest'}
+ const updated=spawnSync('bash',[installer],{env:updateEnv,encoding:'utf8'})
+ assert.equal(updated.status,0,updated.stderr)
+ const current=await readlink(command)
+ assert.notEqual(current,previous)
+ assert.ok((await realpath(current)).startsWith((await realpath(prefix))+'/share/carbot/releases/v0.0.1-'),current)
+ assert.equal(await readFile(join(data,'state.jsonl'),'utf8'),'keep-history')
+ await writeFile(archive+'.sha256','0'.repeat(64)+'  fixture\n')
+ const failed=spawnSync('bash',[installer],{env:updateEnv,encoding:'utf8'})
+ assert.notEqual(failed.status,0)
+ assert.equal(await readlink(command),current)
 }))

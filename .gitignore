@@ -1,4 +1,5 @@
 node_modules/
+skills/**/.runtime/
 /target/
 **/dist/
 .DS_Store
@@ -24,3 +25,7 @@ coverage/
 .gateway-client*.json
 .agent.env
 .agent.env.*
+
+.cargo_tmp/
+
+__pycache__/

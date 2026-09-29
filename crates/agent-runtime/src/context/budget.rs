@@ -17,6 +17,13 @@ impl Default for ContextBudget {
     }
 }
 impl ContextBudget {
+    pub fn summary_plan(
+        &self,
+        history: &[Value],
+        max_bytes: usize,
+    ) -> Result<Option<super::SummaryPlan>, String> {
+        CompressionFactory::create(&self.strategy)?.summary_plan(history, max_bytes)
+    }
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
         let tokens = get("CONTEXT_MAX_TOKENS")
             .filter(|v| !v.is_empty())

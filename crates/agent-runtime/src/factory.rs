@@ -94,6 +94,14 @@ impl RuntimeFactory {
         manifest: serde_json::Value,
         workspace: Option<tempfile::TempDir>,
     ) -> Result<Box<dyn AgentRuntime>, String> {
+        let attachment_root = match &config {
+            RuntimeConfig::Carbot(cfg) => cfg.root.clone(),
+            RuntimeConfig::Codex(cfg) => cfg.workdir.clone(),
+            RuntimeConfig::Claude(cfg) => cfg.workdir.clone(),
+            RuntimeConfig::Mock => {
+                crate::workspace::WorkspaceSettings::root().unwrap_or_else(crate::config::workdir)
+            }
+        };
         let provider: Box<dyn providers::Provider> = match config {
             RuntimeConfig::Mock => Box::new(providers::mock::Runtime::new()),
             RuntimeConfig::Carbot(config) => Box::new(providers::carbot::Runtime::new(
@@ -111,7 +119,9 @@ impl RuntimeFactory {
                 as Box<dyn providers::Provider>
         };
         Ok(Box::new(
-            crate::managed_runtime::ManagedRuntime::new(provider).retain_workspace(workspace),
+            crate::managed_runtime::ManagedRuntime::new(provider)
+                .with_attachment_root(attachment_root)
+                .retain_workspace(workspace),
         ))
     }
 }

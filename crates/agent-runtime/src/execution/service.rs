@@ -1,29 +1,29 @@
-use super::{executor::SandboxExecutor, native::NativeExecutor, profile::Profile};
+use super::{executor::ProcessExecutor, native::NativeExecutor, profile::Profile};
 use crate::skills::ExecutionRequest;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{OnceCell, Semaphore, watch};
-static SERVICE: OnceCell<Arc<Sandbox>> = OnceCell::const_new();
+static SERVICE: OnceCell<Arc<ExecutionService>> = OnceCell::const_new();
 
-pub(super) struct Sandbox {
-    executor: Arc<dyn SandboxExecutor>,
+pub(super) struct ExecutionService {
+    executor: Arc<dyn ProcessExecutor>,
     profiles: HashMap<String, Profile>,
     slots: Arc<Semaphore>,
     stopping: watch::Sender<bool>,
 }
-impl Sandbox {
+impl ExecutionService {
     pub(super) fn new(
-        executor: Arc<dyn SandboxExecutor>,
+        executor: Arc<dyn ProcessExecutor>,
         profiles: Vec<Profile>,
     ) -> Result<Self, String> {
         if profiles.is_empty() || profiles.len() > 16 {
-            return Err("sandbox requires 1..16 profiles".into());
+            return Err("execution requires 1..16 profiles".into());
         }
         let mut selected = HashMap::new();
         for profile in profiles {
             profile.validate()?;
             if selected.insert(profile.id.clone(), profile).is_some() {
-                return Err("duplicate sandbox profile".into());
+                return Err("duplicate execution profile".into());
             }
         }
         let (stopping, _) = watch::channel(false);
@@ -39,9 +39,9 @@ impl Sandbox {
         request: ExecutionRequest,
     ) -> Result<Value, String> {
         request.validate()?;
-        let sandbox = self.clone();
+        let execution = self.clone();
         self.supervise(request.profile.clone(), move |profile| async move {
-            sandbox.executor.execute(&request, &profile).await
+            execution.executor.execute(&request, &profile).await
         })
         .await
     }
@@ -55,22 +55,22 @@ impl Sandbox {
         Fut: std::future::Future<Output = Result<Value, String>> + Send + 'static,
     {
         if *self.stopping.borrow() {
-            return Err("sandbox is shutting down".into());
+            return Err("execution is shutting down".into());
         }
         let profile = self
             .profiles
             .get(&profile)
             .cloned()
-            .ok_or("unknown sandbox profile")?;
+            .ok_or("unknown execution profile")?;
         let permit = self
             .slots
             .clone()
             .acquire_owned()
             .await
-            .map_err(|_| "sandbox closed")?;
+            .map_err(|_| "execution closed")?;
         let mut stopping = self.stopping.subscribe();
         if *stopping.borrow() {
-            return Err("sandbox is shutting down".into());
+            return Err("execution is shutting down".into());
         }
         let (mut tx, rx) = tokio::sync::oneshot::channel();
         let mode = crate::permissions::PermissionMode::current();
@@ -79,13 +79,13 @@ impl Sandbox {
             // Dropping the execution future kills its process group and deletes staging files.
             // The supervisor retains the permit until those RAII guards have run.
             let outcome = tokio::select! {
-                _=tx.closed()=>Err("sandbox caller cancelled".into()),
-                _=stopping.changed()=>Err("sandbox shutdown".into()),
-                result=tokio::time::timeout(Duration::from_secs(profile.timeout_seconds),execute(profile.clone()))=>result.unwrap_or_else(|_|Err("sandbox timed out".into())),
+                _=tx.closed()=>Err("execution caller cancelled".into()),
+                _=stopping.changed()=>Err("execution shutdown".into()),
+                result=tokio::time::timeout(Duration::from_secs(profile.timeout_seconds),execute(profile.clone()))=>result.unwrap_or_else(|_|Err("execution timed out".into())),
             };
             let _ = tx.send(outcome);
         }));
-        rx.await.map_err(|_| "sandbox supervisor stopped")?
+        rx.await.map_err(|_| "execution supervisor stopped")?
     }
     pub(super) async fn shutdown(&self) {
         self.stopping.send_replace(true);
@@ -93,15 +93,20 @@ impl Sandbox {
         self.slots.close();
     }
 }
-async fn service() -> Result<&'static Arc<Sandbox>, String> {
+async fn service() -> Result<&'static Arc<ExecutionService>, String> {
     SERVICE
         .get_or_try_init(|| async {
             let defaults = r#"[{"id":"default","network":"host","timeout_seconds":120}]"#;
             let profiles = serde_json::from_str(
-                &std::env::var("CARBOT_SANDBOX_PROFILES_JSON").unwrap_or_else(|_| defaults.into()),
+                &std::env::var("CARBOT_EXECUTION_PROFILES_JSON")
+                    .or_else(|_| std::env::var("CARBOT_SANDBOX_PROFILES_JSON"))
+                    .unwrap_or_else(|_| defaults.into()),
             )
             .map_err(|e| e.to_string())?;
-            Ok(Arc::new(Sandbox::new(Arc::new(NativeExecutor), profiles)?))
+            Ok(Arc::new(ExecutionService::new(
+                Arc::new(NativeExecutor),
+                profiles,
+            )?))
         })
         .await
 }

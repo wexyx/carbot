@@ -20,4 +20,5 @@ mod connections;
 
 mod directories;
 
+mod attachments;
 mod command_allowlist;

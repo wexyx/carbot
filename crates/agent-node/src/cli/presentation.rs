@@ -131,7 +131,11 @@ impl Presentation {
                 };
                 self.text.clear();
                 self.streaming = false;
-                format!("{answer}\n[完成]\n")
+                if answer.is_empty() {
+                    "\n".into()
+                } else {
+                    format!("{answer}\n")
+                }
             }
             "failed" | "agent.error" | "task.interrupted" => {
                 self.text.clear();
@@ -175,7 +179,7 @@ mod tests {
             output.push_str(&view.render(&event));
         }
         assert_eq!(output.matches("我在这里").count(), 1);
-        assert_eq!(output.matches("[完成]").count(), 1);
+        assert!(!output.contains("[完成]"));
         assert!(!output.contains("long guide") && !output.contains("text_delta"));
         assert!(
             view.render(&json!({"type":"completed","text":"无流式片段的回答"}))

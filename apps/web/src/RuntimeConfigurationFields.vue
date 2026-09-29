@@ -9,8 +9,8 @@ defineProps({values:{type:Object,required:true},hasKey:Boolean,showProvider:{typ
   <el-form-item v-if="showProvider" label="运行器"><el-select v-model="provider" aria-label="配置运行器"><el-option v-for="value in ['carbot','codex','claude','mock']" :key="value" :value="value" :label="value"/></el-select></el-form-item>
   <template v-if="provider==='carbot'">
    <el-form-item label="模型厂商"><el-select v-model="values.MODEL_PROVIDER" aria-label="模型厂商"><el-option v-for="value in ['openai','anthropic','gemini','deepseek','qwen','ark','ollama','compatible']" :key="value" :value="value" :label="value"/></el-select></el-form-item>
-   <el-form-item label="上下文预算（估算 token）"><el-input v-model="values.CONTEXT_MAX_TOKENS" placeholder="65536（含输出预留）" aria-label="上下文预算"/></el-form-item>
-   <el-form-item label="压缩策略"><el-select v-model="values.CONTEXT_STRATEGY" placeholder="首尾摘录（默认）" aria-label="压缩策略"><el-option value="extractive" label="首尾摘录（本地、有损）"/><el-option value="window" label="保留近期（本地、有损）"/><el-option value="disabled" label="禁用，超限提示 /new"/></el-select></el-form-item>
+   <el-form-item label="上下文长度"><el-input v-model="values.CONTEXT_MAX_TOKENS" placeholder="65536（含输出预留）" aria-label="上下文长度"/></el-form-item>
+   <el-form-item label="压缩策略"><el-select v-model="values.CONTEXT_STRATEGY" placeholder="首尾摘录（默认）" aria-label="压缩策略"><el-option value="intelligent" label="智能压缩"/><el-option value="extractive" label="首尾摘录（本地、有损）"/><el-option value="window" label="保留近期（本地、有损）"/><el-option value="disabled" label="禁用，超限提示 /new"/></el-select><small v-if="values.CONTEXT_STRATEGY==='intelligent'">保留关键信息和近期对话，需要时回查历史。压缩时会额外调用当前模型。</small></el-form-item>
    <el-form-item label="模型名称"><el-input v-model="values.MODEL_NAME" required placeholder="例如 deepseek-chat" aria-label="模型名称"/></el-form-item>
    <el-form-item label="接口地址"><el-input v-model="values.MODEL_BASE_URL" placeholder="留空使用厂商默认地址" aria-label="接口地址"/></el-form-item>
    <el-form-item label="接口协议"><el-select v-model="values.MODEL_API" aria-label="接口协议"><el-option value="" label="厂商默认"/><el-option v-for="value in ['chat','responses','anthropic']" :key="value" :value="value" :label="value"/></el-select></el-form-item>

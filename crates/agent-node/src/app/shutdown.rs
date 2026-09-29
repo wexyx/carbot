@@ -8,5 +8,5 @@ pub(crate) async fn signal() {
     }
     #[cfg(not(unix))]
     let _ = tokio::signal::ctrl_c().await;
-    agent_runtime::sandbox::shutdown().await;
+    agent_runtime::execution::shutdown().await;
 }

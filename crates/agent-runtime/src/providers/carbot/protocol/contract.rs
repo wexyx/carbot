@@ -3,6 +3,16 @@ use crate::tools::{ToolDefinition, ToolRegistry};
 use serde_json::Value;
 use std::collections::BTreeMap;
 pub(in super::super) trait ModelProtocol: Send + Sync {
+    fn image(&self, image: &crate::attachments::AttachmentImage) -> Value;
+    fn with_images(&self, history: &[Value]) -> Vec<Value> {
+        let mut history = history.to_vec();
+        crate::attachments::PreparedAttachments::images(|images| {
+            if !images.is_empty() {
+                history.push(serde_json::json!({"role":"user","content":images.iter().map(|image| self.image(image)).collect::<Vec<_>>()}));
+            }
+        });
+        history
+    }
     fn tool(&self, definition: &ToolDefinition) -> Value;
     fn request(
         &self,

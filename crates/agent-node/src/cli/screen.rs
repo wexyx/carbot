@@ -1,6 +1,6 @@
 use super::{editor::Editor, theme::Theme, tool_timeline::ToolTimeline};
 use crossterm::{
-    cursor::{Hide, MoveToColumn, MoveUp, Show},
+    cursor::{Hide, MoveTo, MoveToColumn, MoveUp, Show},
     event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste},
     execute, queue,
     terminal::{self, Clear, ClearType},
@@ -25,9 +25,33 @@ pub(super) struct Screen {
     frame: RefCell<Frame>,
 }
 impl Screen {
+    pub(super) fn banner(&self, server: Option<&str>) -> Result<(), String> {
+        let mut out = stdout();
+        // Startup art is literal terminal output, not Markdown or a chat message.
+        for line in super::banner::text(
+            server,
+            terminal::size().map(|v| usize::from(v.0)).unwrap_or(80),
+        )
+        .lines()
+        {
+            write!(out, "{line}\r\n").map_err(|e| e.to_string())?;
+        }
+        out.flush().map_err(|e| e.to_string())
+    }
     pub(super) fn enter() -> Result<Self, String> {
         terminal::enable_raw_mode().map_err(|e| e.to_string())?;
-        execute!(stdout(), EnableBracketedPaste, DisableMouseCapture).map_err(|e| e.to_string())?;
+        // Clear the visible screen once at interactive startup, retaining native scrollback.
+        // Do not use the alternate screen: mouse selection and copying stay terminal-native.
+        if let Err(error) = execute!(
+            stdout(),
+            Clear(ClearType::All),
+            MoveTo(0, 0),
+            EnableBracketedPaste,
+            DisableMouseCapture
+        ) {
+            let _ = terminal::disable_raw_mode();
+            return Err(error.to_string());
+        }
         Ok(Self {
             theme: Theme::new(),
             frame: RefCell::new(Frame::default()),
@@ -39,11 +63,12 @@ impl Screen {
         transcript: &str,
         status: &str,
         session_info: &str,
+        update_notice: &str,
         editor: &Editor,
         secret: bool,
         _scroll: usize,
         permission: Option<&str>,
-        tools: &ToolTimeline,
+        _tools: &ToolTimeline,
     ) -> Result<(), String> {
         let (cols, rows) = terminal::size().map_err(|e| e.to_string())?;
         if cols < 12 || rows < 8 {
@@ -75,8 +100,7 @@ impl Screen {
         };
         let input = wrap(&format!("❯ {text}"), width);
         let cursor = wrap(&format!("❯ {before}"), width);
-        // Reserve up to five footer rows even in a small terminal.
-        let input_capacity = usize::from(rows).saturating_sub(5).clamp(1, 4);
+        let input_capacity = 1;
         let input_start = cursor.len().saturating_sub(input_capacity);
         let mut lines = vec![];
         let pending = wrap(&super::markdown::render(&frame.pending), width);
@@ -92,10 +116,11 @@ impl Screen {
             );
         }
         if let Some(permission) = permission {
+            lines.clear();
             lines.extend(
                 wrap(permission, width)
                     .into_iter()
-                    .take(usize::from(rows).saturating_sub(9)),
+                    .take(usize::from(rows).saturating_sub(6)),
             );
         }
         let status = if secret || editor.suggestions().is_empty() {
@@ -104,7 +129,11 @@ impl Screen {
             editor.suggestions().join("  ")
         };
 
-        let footer = footer(title, session_info, &status, width);
+        if !status.is_empty() {
+            lines.push(wrap(&status, width).into_iter().next().unwrap_or_default());
+        }
+        let (footer_left, footer_right) = super::footer::layout(session_info, update_notice, width);
+        let footer = vec![format!("{footer_left}{footer_right}")];
         lines.truncate(usize::from(rows).saturating_sub(input_capacity + footer.len()));
         let input_row = lines.len();
         lines.extend(input.iter().skip(input_start).take(input_capacity).cloned());
@@ -121,23 +150,47 @@ impl Screen {
         }
         let mut out = stdout().lock();
         queue!(out, Hide, MoveToColumn(0)).map_err(|e| e.to_string())?;
+        if !frame.drawn {
+            // Reserve the whole input + footer region. Starting on the last row would
+            // scroll the banner up when the footer's newline is written.
+            queue!(out, MoveTo(0, rows.saturating_sub(lines.len() as u16)))
+                .map_err(|e| e.to_string())?;
+        }
         if frame.drawn && frame.cursor_row > 0 {
             queue!(out, MoveUp(frame.cursor_row)).map_err(|e| e.to_string())?;
         }
         queue!(out, Clear(ClearType::FromCursorDown)).map_err(|e| e.to_string())?;
+        let mut committed_rows = 0usize;
         if !committed.is_empty() {
-            let rendered = super::markdown::render(&tools.render(&committed, width));
+            let rendered = super::markdown::render(&committed);
             for line in wrap(&rendered, width) {
+                committed_rows += 1;
                 self.theme
                     .write(&mut out, &line)
                     .map_err(|e| e.to_string())?;
                 write!(out, "\r\n").map_err(|e| e.to_string())?;
             }
         }
+        if frame.drawn {
+            for _ in
+                0..(usize::from(frame.cursor_row) + 1).saturating_sub(committed_rows + lines.len())
+            {
+                write!(out, "\r\n").map_err(|e| e.to_string())?;
+            }
+        }
         for (index, line) in lines.iter().enumerate() {
-            self.theme
-                .write(&mut out, line)
-                .map_err(|e| e.to_string())?;
+            if index + 1 == lines.len() {
+                self.theme
+                    .write(&mut out, &footer_left)
+                    .map_err(|e| e.to_string())?;
+                self.theme
+                    .write_update(&mut out, &footer_right)
+                    .map_err(|e| e.to_string())?;
+            } else {
+                self.theme
+                    .write(&mut out, line)
+                    .map_err(|e| e.to_string())?;
+            }
             if index + 1 < lines.len() {
                 write!(out, "\r\n").map_err(|e| e.to_string())?;
             }
@@ -183,24 +236,6 @@ pub(super) fn wrap(text: &str, width: usize) -> Vec<String> {
     }
     lines
 }
-// Metadata belongs to the live input region, never to committed chat scrollback.
-fn footer(title: &str, session_info: &str, status: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    if !status.is_empty() {
-        lines.push(wrap(status, width).into_iter().next().unwrap_or_default());
-    }
-    lines.extend(
-        wrap(&format!("│ {session_info}"), width)
-            .into_iter()
-            .take(2),
-    );
-    lines.extend(
-        wrap(&format!("CARBOT · {title}"), width)
-            .into_iter()
-            .take(2),
-    );
-    lines
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,17 +246,9 @@ mod tests {
     }
     #[test]
     fn metadata_is_last_and_notice_is_shown_once() {
-        let lines = footer(
-            "default · group · 项目 abc · 会话 def",
-            "模型 · 上下文",
-            "已恢复最近的聊天记录",
-            120,
-        );
-        assert_eq!(
-            lines.last().unwrap(),
-            "CARBOT · default · group · 项目 abc · 会话 def"
-        );
-        assert_eq!(lines.iter().filter(|s| s.contains("已恢复")).count(), 1);
-        assert!(lines[1].contains("模型"));
+        let (left, right) = super::super::footer::layout("模型 · 上下文", "", 120);
+        assert_eq!(left, "│ 模型 · 上下文");
+        assert!(right.is_empty());
+        assert!(!left.contains("已恢复"));
     }
 }

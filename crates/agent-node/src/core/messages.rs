@@ -55,11 +55,18 @@ pub(crate) async fn send(
                 Detail(json!({"error":"no connected client"})),
             ))?,
     };
-    if state
+    let test = super::agent_tests::is_test(state, project_id).await;
+    let definition = state
         .store
         .get("local_agents", &format!("{project_id}:{client_id}"))
-        .await
-        .is_some_and(|r| r["enabled"] == false)
+        .await;
+    let local_test = test && definition.is_some();
+    if !local_test
+        && state
+            .store
+            .get("local_agents", &format!("{project_id}:{client_id}"))
+            .await
+            .is_some_and(|r| r["enabled"] == false)
     {
         return Err((
             ErrorKind::Conflict,
@@ -84,17 +91,23 @@ pub(crate) async fn send(
         .await
         .map_err(|error| (ErrorKind::Internal, Detail(json!({"error":error}))))?;
     command.data["skills"] = json!(catalog.definitions());
-    let sender = state
-        .clients
-        .lock()
-        .await
-        .get(&(project_id, client_id.clone()))
-        .filter(|client| !client.sender.is_closed())
-        .map(|client| client.sender.clone())
-        .ok_or((
-            ErrorKind::Conflict,
-            Detail(json!({"error":"client disconnected","client_id":client_id})),
-        ))?;
+    let sender = if local_test {
+        None
+    } else {
+        Some(
+            state
+                .clients
+                .lock()
+                .await
+                .get(&(project_id, client_id.clone()))
+                .filter(|client| !client.sender.is_closed())
+                .map(|client| client.sender.clone())
+                .ok_or((
+                    ErrorKind::Conflict,
+                    Detail(json!({"error":"client disconnected","client_id":client_id})),
+                ))?,
+        )
+    };
     let is_local = state
         .store
         .list("local_agents")
@@ -134,7 +147,22 @@ pub(crate) async fn send(
         ));
     }
     let _ = events.send(user_event.clone());
-    if let Err(error) = sender.try_send(command) {
+    let dispatch = if let Some(definition) = definition.filter(|_| local_test) {
+        let state = state.clone();
+        let credential = crate::Credential {
+            project_id,
+            client_id: client_id.clone(),
+            role: definition["role"].as_str().unwrap_or_default().into(),
+        };
+        let provider = definition["provider"].as_str().unwrap_or("mock").to_owned();
+        tokio::spawn(async move {
+            super::local::execute(&state, &credential, &provider, &command, None).await;
+        });
+        Ok(())
+    } else {
+        sender.expect("normal dispatch sender").try_send(command)
+    };
+    if let Err(error) = dispatch {
         let failure = event(
             id,
             "agent.error",

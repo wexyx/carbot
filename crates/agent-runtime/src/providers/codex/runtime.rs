@@ -27,7 +27,7 @@ impl crate::providers::Provider for Runtime {
         on_event: &'a mut EventSink<'_>,
     ) -> RuntimeFuture<'a> {
         Box::pin(async move {
-            let sandbox = crate::sandbox::native::NativeCommand::new()?;
+            let process = crate::execution::native::NativeCommand::new(&self.config.workdir)?;
             let credential = std::env::var_os("CODEX_HOME")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| {
@@ -36,7 +36,7 @@ impl crate::providers::Provider for Runtime {
                 })
                 .join("auth.json");
             if std::env::var_os("OPENAI_API_KEY").is_none() {
-                sandbox
+                process
                     .import_credential(
                         &self.config.workdir,
                         &credential,
@@ -44,9 +44,8 @@ impl crate::providers::Provider for Runtime {
                     )
                     .await?;
             }
-            let mut command =
-                sandbox.command(&self.config.binary, &self.config.workdir, &[], &[], true)?;
-            command.env("CODEX_HOME", sandbox.scratch().join(".codex"));
+            let mut command = process.command(&self.config.binary, &self.config.workdir)?;
+            command.env("CODEX_HOME", process.scratch().join(".codex"));
             for key in ["OPENAI_API_KEY", "OPENAI_BASE_URL"] {
                 if let Some(value) = std::env::var_os(key) {
                     command.env(key, value);
@@ -59,17 +58,24 @@ impl crate::providers::Provider for Runtime {
             } else {
                 "read-only"
             };
+            command.args([
+                "-a",
+                "never",
+                "exec",
+                "--json",
+                "--ephemeral",
+                "--skip-git-repo-check",
+                "--sandbox",
+                sandbox_mode,
+            ]);
+            crate::attachments::PreparedAttachments::images(|images| {
+                for image in images {
+                    command.arg("--image").arg(&image.path);
+                }
+            });
             let mut child = command
-                .args(["-a", "never"])
-                .args([
-                    "exec",
-                    "--json",
-                    "--ephemeral",
-                    "--skip-git-repo-check",
-                    "--sandbox",
-                    sandbox_mode,
-                    prompt,
-                ])
+                .arg("--")
+                .arg(prompt)
                 .current_dir(&self.config.workdir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -78,7 +84,7 @@ impl crate::providers::Provider for Runtime {
                 .map_err(|error| {
                     format!("Could not start Codex CLI: {error}. Is codex installed and logged in?")
                 })?;
-            let _group = crate::sandbox::native::ProcessGroup::new(
+            let _group = crate::execution::native::ProcessGroup::new(
                 child.id().ok_or("missing provider process ID")?,
             );
             let stdout = child.stdout.take().ok_or("Codex stdout unavailable")?;

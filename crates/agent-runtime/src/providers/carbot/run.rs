@@ -9,21 +9,14 @@ use std::collections::BTreeMap;
 pub(super) struct Run<'a> {
     client: &'a ModelClient,
     tools: &'a ToolRegistry,
-    max_steps: usize,
     history: Vec<Value>,
     session: ToolSession,
 }
 impl<'a> Run<'a> {
-    pub(super) fn new(
-        client: &'a ModelClient,
-        tools: &'a ToolRegistry,
-        max_steps: usize,
-        prompt: &str,
-    ) -> Self {
+    pub(super) fn new(client: &'a ModelClient, tools: &'a ToolRegistry, prompt: &str) -> Self {
         Self {
             client,
             tools,
-            max_steps,
             history: vec![json!({"role":"user","content":prompt})],
             session: ToolSession::default(),
         }
@@ -32,9 +25,11 @@ impl<'a> Run<'a> {
         mut self,
         events: &mut (impl FnMut(RuntimeEvent) + Send),
     ) -> Result<String, String> {
-        for _ in 0..self.max_steps {
+        loop {
+            tokio::task::yield_now().await;
             self.client
-                .prepare_context(&mut self.history, self.tools, events)?;
+                .prepare_context(&mut self.history, self.tools, events)
+                .await?;
             let turn = self
                 .client
                 .next_turn(&self.history, self.tools, events)
@@ -70,6 +65,5 @@ impl<'a> Run<'a> {
             self.client
                 .append_history(&mut self.history, &turn, &results);
         }
-        Err(format!("harness reached its {} step limit", self.max_steps))
     }
 }

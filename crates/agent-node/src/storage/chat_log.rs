@@ -13,6 +13,7 @@ pub(crate) struct ChatLog(Arc<Inner>);
 struct Inner {
     root: PathBuf,
     cursors: Mutex<HashMap<PathBuf, u64>>,
+    line_indexes: Mutex<HashMap<PathBuf, super::log_line_index::LineIndex>>,
     _temporary: Option<tempfile::TempDir>,
 }
 impl ChatLog {
@@ -20,6 +21,7 @@ impl ChatLog {
         Self(Arc::new(Inner {
             root,
             cursors: Mutex::new(HashMap::new()),
+            line_indexes: Mutex::new(HashMap::new()),
             _temporary: None,
         }))
     }
@@ -29,6 +31,7 @@ impl ChatLog {
         Self(Arc::new(Inner {
             root: dir.path().into(),
             cursors: Mutex::new(HashMap::new()),
+            line_indexes: Mutex::new(HashMap::new()),
             _temporary: Some(dir),
         }))
     }
@@ -140,6 +143,39 @@ impl ChatLog {
         .await
         .map_err(|e| e.to_string())?
     }
+    pub(crate) async fn read_lines(
+        &self,
+        project: Uuid,
+        chat: String,
+        name: Option<String>,
+        from: u64,
+        to: u64,
+    ) -> Result<Value, String> {
+        let log = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let directory = log.directory(project, &chat);
+            let mut indexes = log
+                .0
+                .line_indexes
+                .lock()
+                .map_err(|_| "log line index poisoned")?;
+            if let Some(name) = name {
+                let file = super::log_line_index::LineIndex::open(&directory, &name)?;
+                cached_index(&mut indexes, directory.join(&name)).read(file, &name, from, to)
+            } else {
+                let mut result = Vec::new();
+                for path in files(&directory)? {
+                    let name = path.file_name().unwrap().to_string_lossy().to_string();
+                    let mut file = super::log_line_index::LineIndex::open(&directory, &name)?;
+                    let count = cached_index(&mut indexes, path).refresh(&mut file)?;
+                    result.push(json!({"file":name,"from_line":1,"to_line":count}));
+                }
+                Ok(json!(result))
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
     pub(crate) async fn read_file(
         &self,
         project: Uuid,
@@ -166,6 +202,17 @@ impl ChatLog {
         .await
         .map_err(|e| e.to_string())?
     }
+}
+fn cached_index(
+    indexes: &mut HashMap<PathBuf, super::log_line_index::LineIndex>,
+    path: PathBuf,
+) -> &mut super::log_line_index::LineIndex {
+    if !indexes.contains_key(&path) && indexes.len() >= 16 {
+        if let Some(key) = indexes.keys().next().cloned() {
+            indexes.remove(&key);
+        }
+    }
+    indexes.entry(path).or_default()
 }
 fn files(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let entries = match std::fs::read_dir(dir) {

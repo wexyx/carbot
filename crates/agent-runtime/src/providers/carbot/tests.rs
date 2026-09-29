@@ -16,7 +16,6 @@ fn protocol_factory_formats_tools_and_authentication() {
             base: "http://localhost/v1".into(),
             key: "test-secret".into(),
             model: "fixture".into(),
-            max_steps: 3,
             max_tokens: 256,
             root: PathBuf::from("."),
         };
@@ -102,7 +101,7 @@ use std::sync::{
 };
 
 #[tokio::test]
-async fn all_three_protocols_complete_a_tool_roundtrip() {
+async fn all_three_protocols_complete_twenty_tool_roundtrips() {
     for (tool_name, arguments, expected) in [
         ("read_file", r#"{"path":"Cargo.toml"}"#, "agent-runtime"),
         (
@@ -118,7 +117,7 @@ async fn all_three_protocols_complete_a_tool_roundtrip() {
                 let counter = counter.clone();
                 async move {
                     let turn = counter.fetch_add(1, Ordering::SeqCst);
-                    let chunks = if turn == 0 {
+                    let chunks = if turn < 20 {
                         match api {
                             Api::Chat => vec![json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call1","type":"function","function":{"name":tool_name,"arguments":arguments}}]},"finish_reason":"tool_calls"}]})],
                             Api::Responses => vec![json!({"type":"response.completed","response":{"output":[{"type":"function_call","call_id":"call1","name":tool_name,"arguments":arguments}]}})],
@@ -152,7 +151,6 @@ async fn all_three_protocols_complete_a_tool_roundtrip() {
                 base: format!("http://{address}"),
                 key: "fixture".into(),
                 model: "fixture".into(),
-                max_steps: 3,
                 max_tokens: 256,
                 root: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
             };
@@ -191,7 +189,14 @@ async fn all_three_protocols_complete_a_tool_roundtrip() {
                     text: "verified".into()
                 })
             );
-            assert_eq!(count.load(Ordering::SeqCst), 2);
+            assert_eq!(count.load(Ordering::SeqCst), 21);
+            assert_eq!(
+                output
+                    .iter()
+                    .filter(|e| matches!(e, RuntimeEvent::ToolFinished { .. }))
+                    .count(),
+                20
+            );
         }
     }
 }

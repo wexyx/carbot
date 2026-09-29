@@ -25,3 +25,14 @@ impl Core {
         }
     }
 }
+
+pub(super) async fn is_test(state: &crate::AppState, project: Uuid) -> bool {
+    let Some(group) = super::project_execution::ProjectExecution::current() else {
+        return false;
+    };
+    state
+        .policy_store
+        .get(project, "group", &group)
+        .await
+        .is_ok_and(|row| row.body["kind"] == "agent_test")
+}

@@ -4,6 +4,7 @@ pub(super) enum Command {
     History(String),
     Tools(Option<usize>),
     Exit,
+    Update,
     Project(Option<String>),
     New,
     Resume(String),
@@ -17,6 +18,8 @@ pub(super) enum Command {
     WorkspaceConfirm(String, bool),
     Say(String),
     Group(String),
+    Attach(String),
+    Detach,
 }
 pub(super) fn parse(line: &str) -> Result<Command, String> {
     let line = line.trim();
@@ -28,6 +31,8 @@ pub(super) fn parse(line: &str) -> Result<Command, String> {
         return Ok(command);
     }
     Ok(match head {
+        "attach" => Command::Attach(tail.trim().into()),
+        "detach" => Command::Detach,
         "add-agent" | "remove-agent" | "agent" | "group" => Command::Group(line.into()),
         "members" => Command::Group("/agents".into()),
         "manage" => Command::Admin,
@@ -39,6 +44,8 @@ pub(super) fn parse(line: &str) -> Result<Command, String> {
         }),
         "help" => Command::Help(tail.trim().into()),
         "exit" => Command::Exit,
+        "update" if tail.trim().is_empty() => Command::Update,
+        "update" => return Err("用法：/update".into()),
         "namespace" => Command::Project((!tail.trim().is_empty()).then(|| tail.trim().into())),
         "allowlist" => Command::Allowlist(tail.trim().into()),
         "permissions" => Command::Permissions(tail.trim().into()),
@@ -55,7 +62,6 @@ pub(super) fn parse(line: &str) -> Result<Command, String> {
         _ => return Err("仅支持会话导航与人工确认命令；管理操作可以直接告诉默认 Agent。".into()),
     })
 }
-pub(super) use super::help::TEXT as HELP;
 #[cfg(test)]
 mod tests {
     use super::*;

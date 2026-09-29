@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 pub(super) struct AnthropicProtocol;
 impl ModelProtocol for AnthropicProtocol {
+    fn image(&self, image: &crate::attachments::AttachmentImage) -> Value {
+        json!({"type":"image","source":{"type":"base64","media_type":image.media_type,"data":image.data}})
+    }
     fn tool(&self, d: &ToolDefinition) -> Value {
         json!({"name":d.name(),"description":d.description(),"input_schema":d.parameters()})
     }

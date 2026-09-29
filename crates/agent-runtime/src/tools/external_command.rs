@@ -18,7 +18,7 @@ impl Tool for CommandTool {
         ToolDefinition::new(
             self.definition.name(),
             format!(
-                "{} — requires one-shot human approval; runs a fixed shell command in workspace sandbox",
+                "{} — requires one-shot human approval; runs a fixed shell command on the host (including access outside the workspace)",
                 self.definition.description()
             ),
             json!({"type":"object","properties":{},"additionalProperties":false}),

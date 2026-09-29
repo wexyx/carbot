@@ -1,5 +1,5 @@
 use super::{NativeCommand, ProcessGroup};
-use crate::sandbox::profile::Profile;
+use crate::execution::profile::Profile;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncReadExt;
@@ -8,8 +8,8 @@ pub(crate) async fn execute(
     script: String,
     profile: Profile,
 ) -> Result<Value, String> {
-    let sandbox = NativeCommand::new()?;
-    let mut command = sandbox.command(Path::new("/bin/sh"), &root, &[], &[], true)?;
+    let execution = NativeCommand::new(&root)?;
+    let mut command = execution.command(Path::new("/bin/sh"), &root)?;
     command.arg("-c").arg(script);
     #[cfg(unix)]
     unsafe {
@@ -33,7 +33,7 @@ pub(crate) async fn execute(
     }
     let mut child = command
         .spawn()
-        .map_err(|e| format!("sandbox command failed; no unrestricted fallback: {e}"))?;
+        .map_err(|e| format!("command launch failed: {e}"))?;
     let _group = ProcessGroup::new(child.id().ok_or("missing process ID")?);
     let stdout = child.stdout.take().ok_or("missing stdout")?;
     let stderr = child.stderr.take().ok_or("missing stderr")?;
@@ -43,7 +43,7 @@ pub(crate) async fn execute(
         read(stderr)
     )?;
     Ok(
-        json!({"success":status.success(),"exit_code":status.code(),"stdout":stdout,"stderr":stderr,"workdir":root,"sandbox":if crate::permissions::PermissionMode::current()==crate::permissions::PermissionMode::Full {"disabled_explicit_full_access"} else {"native"},"network":"host"}),
+        json!({"success":status.success(),"exit_code":status.code(),"stdout":stdout,"stderr":stderr,"workdir":root,"execution":"host","network":"host"}),
     )
 }
 async fn read(reader: impl tokio::io::AsyncRead + Unpin) -> Result<String, String> {
