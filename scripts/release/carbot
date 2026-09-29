@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+launcher=${BASH_SOURCE[0]}
+while [[ -L "$launcher" ]]; do
+  parent=$(cd -P -- "$(dirname -- "$launcher")" && pwd)
+  launcher=$(readlink "$launcher")
+  [[ $launcher == /* ]] || launcher="$parent/$launcher"
+done
+bundle=$(cd -P -- "$(dirname -- "$launcher")/.." && pwd)
+export WEB_CONFIG_DIR=${WEB_CONFIG_DIR:-$bundle/web}
+if [[ ${1:-} == --headless ]]; then
+  shift
+  exec "$bundle/libexec/agent-node" "$@"
+fi
+exec "$bundle/libexec/agent-node" --cli "$@"

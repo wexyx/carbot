@@ -1,0 +1,33 @@
+use crate::*;
+pub(crate) async fn persist_event(
+    state: &AppState,
+    project_id: Uuid,
+    channel: &str,
+    event: &WireEvent,
+) -> bool {
+    let result=async {
+        let run=match event.data["message_id"].as_str(){Some(id)=>state.store.get("runs",id).await,None=>None};
+        if event.kind.starts_with("agent.")&&run.as_ref().is_some_and(|r|r["status"]=="interrupted"){return Err("late output from interrupted run".into());}
+        let session_run=state.store.get("runs",&event.session_id.to_string()).await;
+        let group=run.as_ref().or(session_run.as_ref()).and_then(|r|r["group_id"].as_str());
+        let chat=group.map(|g|format!("group:{g}")).unwrap_or_else(||channel.to_string());
+        state.store.logs().append(project_id,chat,vec![json!({"id":event.id,"project_id":project_id,"channel":channel,"type":event.kind,"payload":event,"created_at":storage::now().to_string()})]).await?;
+        if matches!(event.kind.as_str(),"agent.done"|"agent.error"){
+            state.store.transaction(|data|{conversation::record(data,event);Ok(())}).await?;
+        }
+        Ok::<_,String>(())
+    }.await;
+    if let Err(error) = result {
+        eprintln!("history persistence failed: {error}");
+        return false;
+    }
+    true
+}
+pub(crate) fn event(session_id: Uuid, kind: impl Into<String>, data: Value) -> WireEvent {
+    WireEvent {
+        id: Uuid::new_v4(),
+        kind: kind.into(),
+        session_id,
+        data,
+    }
+}

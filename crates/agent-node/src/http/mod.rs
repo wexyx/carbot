@@ -1,0 +1,23 @@
+pub(crate) mod admin;
+pub(crate) mod admin_configuration;
+pub(crate) mod assets;
+pub(crate) mod auth;
+mod capabilities;
+pub(crate) mod chat_logs;
+pub(crate) mod events;
+pub(crate) mod local_access;
+pub(crate) mod repl;
+pub(crate) mod routes;
+pub(crate) mod server;
+pub(crate) mod sessions;
+pub(crate) mod skills;
+pub(crate) mod tools;
+pub(crate) mod web_settings;
+pub(crate) mod workspace;
+
+mod agents;
+mod connections;
+
+mod directories;
+
+mod command_allowlist;

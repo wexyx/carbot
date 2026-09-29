@@ -1,0 +1,95 @@
+use crossterm::{
+    queue,
+    style::{Color, Print, ResetColor, SetForegroundColor},
+};
+use std::io::Write;
+
+pub(super) struct Theme {
+    enabled: bool,
+}
+impl Theme {
+    pub(super) fn new() -> Self {
+        Self {
+            enabled: std::env::var_os("NO_COLOR").is_none(),
+        }
+    }
+    fn color(text: &str) -> Option<Color> {
+        let text = text.trim_start();
+        if text.starts_with("▌") {
+            Some(Color::Cyan)
+        } else if text.starts_with("│") || text.starts_with("┌") || text.starts_with("└") {
+            Some(Color::DarkGrey)
+        } else if text.starts_with("错误")
+            || text.starts_with("[结束]")
+            || text.starts_with("error:")
+            || text.contains("persistence failed")
+        {
+            Some(Color::Red)
+        } else if text.starts_with("[完成]") || text.starts_with("完成") || text.starts_with("就绪")
+        {
+            Some(Color::Green)
+        } else if text.starts_with("你：") || text.starts_with("❯") || text.starts_with("CARBOT")
+        {
+            Some(Color::Cyan)
+        } else if text.starts_with("[调用工具")
+            || text.starts_with("调用工具")
+            || text.starts_with("等待")
+            || text.starts_with("正在")
+            || text.starts_with("需要确认")
+            || text.starts_with("目录访问")
+        {
+            Some(Color::Yellow)
+        } else if text.starts_with('/') {
+            Some(Color::Magenta)
+        } else if text.starts_with("─") || text.starts_with("Enter ") {
+            Some(Color::DarkGrey)
+        } else {
+            None
+        }
+    }
+    pub(super) fn write(&self, out: &mut impl Write, text: &str) -> std::io::Result<()> {
+        if self.enabled
+            && (text.starts_with("› 拒绝") || text.starts_with("  拒绝"))
+            && text.contains("允许一次")
+        {
+            let split = text.find("允许一次").unwrap();
+            let (deny, allow) = text.split_at(split);
+            return queue!(
+                out,
+                SetForegroundColor(Color::Red),
+                Print(deny),
+                ResetColor,
+                SetForegroundColor(Color::Green),
+                Print(allow),
+                ResetColor
+            );
+        }
+        if let Some(color) = Self::color(text).filter(|_| self.enabled) {
+            queue!(out, SetForegroundColor(color), Print(text), ResetColor)
+        } else {
+            queue!(out, Print(text))
+        }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn semantic_colors_and_no_color_mode() {
+        for text in [
+            "你：hi",
+            "[调用工具：group_list]",
+            "[完成]",
+            "错误：失败",
+            "› 拒绝      允许一次",
+            "  拒绝    › 允许一次",
+        ] {
+            let mut colored = Vec::new();
+            Theme { enabled: true }.write(&mut colored, text).unwrap();
+            assert!(colored.contains(&27));
+            let mut plain = Vec::new();
+            Theme { enabled: false }.write(&mut plain, text).unwrap();
+            assert_eq!(String::from_utf8(plain).unwrap(), text);
+        }
+    }
+}

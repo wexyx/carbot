@@ -1,0 +1,11 @@
+{
+  "name": "agent-node-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "web": "pnpm --dir apps/web dev",
+    "web:build": "pnpm --dir apps/web build"
+  },
+  "engines": { "node": ">=20" }
+}

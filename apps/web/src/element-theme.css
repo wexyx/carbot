@@ -1,0 +1,125 @@
+/* Element Plus owns controls; Carbot owns only page and conversation layout. */
+:root{--el-color-primary:#4c79e8;--el-border-radius-base:8px;--el-font-size-base:14px}
+:root[data-theme="light"]{--bg:#f5f7fa;--panel:#fff;--raised:#f0f2f5;--line:#e4e7ed;--ink:#303133;--muted:#909399;--accent:var(--el-color-primary)}
+:root[data-theme="dark"]{--bg:#141414;--panel:#1d1e1f;--raised:#262727;--line:#363637;--ink:#e5eaf3;--muted:#a3a6ad;--accent:#8aabff}
+html,body{background:var(--bg);color:var(--ink)}
+.workspace{background:var(--bg);grid-template-columns:248px minmax(0,1fr)}
+.workspace .sidebar{background:var(--panel);border-right:1px solid var(--line);padding:22px 14px 0}
+.workspace .chat,.workspace .empty-project{background:var(--bg)}
+.workspace .chat-header{background:var(--panel);border-color:var(--line);height:80px;padding:0 28px}
+.workspace .node-connection{background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:none}
+.workspace .brand-name{color:var(--ink);font-size:24px;letter-spacing:-.7px}
+.workspace .brand{padding-bottom:18px}.workspace .sidebar-footer{border-color:var(--line)}
+.el-button{font-weight:500;letter-spacing:0;filter:none;box-shadow:none}
+.el-button+.el-button{margin-left:0}.el-button.is-disabled{opacity:1}
+.el-button:where(:not(.el-button--primary):not(.el-button--danger):not(.is-text):not(.is-link)){background:var(--el-button-bg-color);color:var(--el-button-text-color);border:1px solid var(--el-button-border-color)}
+.el-button--primary{background:var(--el-color-primary);color:#fff;border:1px solid var(--el-color-primary)}
+.el-button:not(.is-disabled):hover{filter:none;background:var(--el-button-hover-bg-color);border-color:var(--el-button-hover-border-color);color:var(--el-button-hover-text-color)}
+.el-input__inner,.el-textarea__inner{font:inherit;color:var(--el-text-color-regular);border:0;border-radius:0;background:transparent;padding:0;outline:none}
+.el-input__inner:focus{border:0;box-shadow:none}.el-textarea__inner{padding:10px 12px;border-radius:8px;background:var(--el-input-bg-color,var(--el-fill-color-blank))}
+.el-input__wrapper,.el-select__wrapper{background:var(--el-fill-color-blank);border-radius:8px;min-height:36px}
+.el-input,.el-select{min-width:0;width:100%}
+.el-checkbox__original,.el-radio__original{padding:0;border:0}
+.el-dialog.carbot-dialog{padding:0;width:min(1120px,94vw);border-radius:12px;overflow:hidden;background:var(--panel)}
+.carbot-dialog .el-dialog__header{display:none}.carbot-dialog .el-dialog__body{padding:0;color:var(--ink)}
+.config-panel,.config-panel.inline-panel{background:var(--panel);color:var(--ink);box-shadow:none}
+.carbot-dialog .config-panel{width:100%;height:min(820px,86dvh);max-height:none;border:0;border-radius:0}
+.config-panel .config-header{background:var(--panel);border-bottom:1px solid var(--line);padding:22px 26px}
+.config-header h2{font-size:20px;color:var(--ink)}.config-header .eyebrow{display:none}
+.config-panel .config-detail{background:var(--panel)}
+.config-panel .config-nav,.config-panel .catalog-sidebar{background:var(--bg);border-color:var(--line)}
+.config-panel .form-card,.config-panel .mode-card{background:var(--panel);border:1px solid var(--line);box-shadow:none;border-radius:8px}
+.config-panel .config-footer{background:var(--panel);border-color:var(--line)}
+.config-panel .config-fields{min-width:0}
+.config-panel .field-stack,.config-panel .form-grid label{color:var(--el-text-color-regular)}
+.config-panel .section-heading h3{font-size:17px}.config-panel .section-heading p{color:var(--muted);line-height:1.7}
+.config-panel .binding-grid{gap:14px}.config-panel .binding-grid label{min-width:0}
+.config-panel .catalog-row{height:auto;white-space:normal;padding:14px 12px;background:transparent;border-color:transparent;justify-content:flex-start}
+.catalog-row>span{display:flex;gap:10px;width:100%;text-align:left;min-width:0}
+.config-panel .catalog-row.active{background:var(--el-color-primary-light-9);border-color:var(--el-color-primary-light-7)}
+.workspace .agent-choice{height:auto;min-height:56px;background:transparent;border-color:transparent;text-align:left;white-space:normal}
+.agent-choice>span{display:flex;gap:12px;align-items:center;width:100%}
+.workspace .agent-choice.active{background:var(--el-color-primary-light-9);color:var(--el-color-primary)}
+.workspace .agent-choice .avatar{background:var(--raised);color:var(--muted);border-color:var(--line)}
+.workspace .icon-button{min-width:30px;height:30px;padding:5px;border-color:transparent;background:transparent}
+.workspace-tabs{background:none;padding:0;margin:0 4px 18px}.workspace-tabs .el-tabs__header{margin:0}.workspace-tabs .el-tabs__nav{width:100%}.workspace-tabs .el-tabs__item{flex:1;width:50%;padding:0}
+.capability-tabs.el-tabs{display:block;padding:0 26px;border-bottom:1px solid var(--line)}.capability-tabs .el-tabs__header{margin:0}
+.config-nav .el-button{height:auto;white-space:normal;justify-content:flex-start;background:transparent;border-color:transparent;padding:14px 12px}
+.config-nav span{display:block;text-align:left;line-height:1.7}.config-nav .el-button.active{background:var(--el-color-primary-light-9);color:var(--el-color-primary)}
+.config-nav small{display:block}.file-tree .el-button{height:auto;white-space:normal;justify-content:flex-start;padding:10px}
+.file-tree,.file-editor,.file-editor-bar,.code-preview,.test-result,.test-console{background:var(--bg);border-color:var(--line);color:var(--ink)}
+.el-input.code-editor{padding:0;border:0;background:none}.code-editor .el-textarea__inner{font:12px/1.7 ui-monospace,monospace}
+.config-table-wrap{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.el-table th.el-table__cell{background:var(--el-fill-color-light)}
+.el-table .cell{overflow-wrap:anywhere}.el-table .row-actions{display:flex;gap:5px}
+.workspace .approval,.agent-test-chat .approval,.config-panel .approval{background:var(--el-color-warning-light-9);border:1px solid var(--el-color-warning-light-7);color:var(--el-text-color-primary);border-radius:8px}
+.workspace .composer,.agent-test-chat .test-composer{background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 24px #00000008;border-radius:12px}
+.composer .el-textarea__inner,.test-composer .el-textarea__inner{box-shadow:none;background:transparent}
+.composer-area{padding:16px 28px 20px}.composer-note{color:var(--muted)}
+.messages{padding:24px 28px}.message-column{max-width:840px}.message-row{margin:26px 0;gap:12px}
+.message-row .avatar{font-size:12px;background:var(--raised);color:var(--muted);border:0;border-radius:10px}
+.message-content{max-width:84%}.sender{color:var(--muted);font-size:11px;display:flex;align-items:center;gap:12px;margin:0 0 9px}
+.from-user .sender{justify-content:flex-end}.sender time{font-size:10px;opacity:.8}
+.workspace .bubble{background:var(--panel);border:1px solid var(--line);box-shadow:none;border-radius:12px;color:var(--ink);padding:14px 18px;line-height:1.8}
+.workspace .from-user .bubble{background:var(--el-color-primary-light-9);border-color:var(--el-color-primary-light-8);color:var(--ink)}
+.tool-wrap{max-width:680px;margin:8px 0 8px 46px}.tool-collapse{border:0}
+.tool-collapse .el-collapse-item__header{min-height:38px;height:auto;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);gap:10px;font-size:12px;line-height:1.5}
+.tool-collapse .el-collapse-item__wrap{background:var(--panel);border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px}
+.tool-collapse .el-collapse-item__content{padding-bottom:0;color:var(--ink)}.tool-collapse .tool-name{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool-collapse time{color:var(--muted);font-size:10px}.tool-content{border:0}.tool-content pre{background:var(--bg);border-radius:6px;padding:12px}
+.chat-date-divider{color:var(--muted);font-size:11px}.chat-date-divider:before,.chat-date-divider:after{background:var(--line)}
+.markdown-body pre{background:var(--bg);border-color:var(--line)}.markdown-body code{background:var(--raised);color:var(--ink)}.markdown-body a{color:var(--el-color-primary)}
+.empty-project .el-empty__description p{color:var(--muted)}
+.settings-panel{background:var(--panel);color:var(--ink);box-shadow:none;border-radius:12px}
+.el-overlay{backdrop-filter:blur(2px)}
+@media(max-width:750px){.workspace{grid-template-columns:1fr}.messages{padding:16px}.composer-area{padding:12px}.carbot-dialog .config-panel{height:90dvh}.el-dialog.carbot-dialog{width:96vw}.message-content{max-width:88%}}
+
+/* Shared chrome and native layout, with no legacy palette overriding component internals. */
+.sidebar-spacer{flex:1;min-height:20px}.brand-name{flex:1;font-weight:650}
+.brand{display:flex;align-items:center;gap:8px}.node-connection{display:grid;gap:7px;padding:13px 14px;margin-bottom:20px;font-size:12px}
+.node-label{color:var(--muted);font-size:10px}.node-connection code{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.group-actions{display:flex;gap:5px}.toolbar-icon svg{width:18px;height:18px}.workspace .toolbar-icon{padding:8px;width:34px}
+.sidebar-heading{padding:10px 8px;color:var(--muted)}.capability-nav{border-color:var(--line);padding:16px 0}
+.workspace .workspace-tabs{background:transparent;border:0;box-shadow:none;border-radius:0}
+.workspace .agent-choice{box-shadow:none;border-radius:8px;margin:3px 0;justify-content:flex-start}
+.workspace .agent-choice>span{display:flex;gap:10px;text-align:left;align-items:center;justify-content:flex-start;width:100%;min-width:0}
+.agent-choice b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:155px}.agent-choice small{color:var(--muted)}
+.config-nav .el-button>span{display:block;width:100%;text-align:left;line-height:1.6}.config-nav .el-button small{padding:5px 0 0;font-size:10px}
+.config-nav .el-button{justify-content:flex-start;align-items:flex-start}
+.catalog-row>span{display:flex;align-items:flex-start;width:100%;text-align:left;gap:10px}
+.el-table .row-actions .el-button{min-width:24px;padding:4px;height:28px;font-size:12px}
+.el-button.is-text,.el-button.is-link{background:transparent;border-color:transparent;color:var(--el-button-text-color)}
+.el-input.el-input .el-input__inner{padding:0;border:0;background:transparent;box-shadow:none;color:var(--el-text-color-regular)}
+.el-textarea.el-textarea .el-textarea__inner{color:var(--el-text-color-regular);background:var(--el-fill-color-blank)}
+.el-input-number .el-input-number__decrease,.el-input-number .el-input-number__increase{padding:0}
+.workspace .welcome{background:none;margin:0 auto;text-align:center;padding:clamp(40px,12vh,120px) 16px 36px}
+.welcome:before{display:none}.welcome h1{color:var(--ink);font-size:26px;font-weight:600;letter-spacing:0}.welcome p{color:var(--muted);line-height:1.8}
+.suggestions .el-button{height:auto;padding:12px 16px;white-space:normal}
+.chat-date-divider{display:flex;align-items:center;gap:16px;margin:16px 0 24px;justify-content:center}
+.chat-date-divider:before,.chat-date-divider:after{content:"";height:1px;flex:1}
+.tool-wrap .tool-collapse .el-collapse-item__header>span{display:inline-flex;gap:8px;align-items:center}
+.thinking{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.status-pill,.count-pill{background:var(--el-color-primary-light-9);border-color:var(--el-color-primary-light-8);color:var(--el-color-primary)}
+.agent-test-chat .chat-header{height:auto;min-height:90px}.agent-test-chat .test-composer{width:100%}
+.agent-test-chat .test-composer>.el-textarea{flex:1}.agent-test-chat .test-composer .el-textarea__inner{min-height:72px}
+.settings-panel{width:100%;padding:4px 8px 8px;max-height:none}.el-dialog__body .settings-panel>p{margin-top:0}
+.panel-mount{display:contents}
+@media(max-width:560px){.config-nav .el-button{flex-shrink:0}.config-nav .el-button>span{white-space:nowrap}.config-nav .el-button small{display:none}}
+
+.config-nav .count-pill{display:inline-flex;margin-left:8px;width:auto}
+.runtime-configuration .el-collapse-item__header{padding:18px 24px;background:var(--panel);color:var(--ink);height:auto;min-height:56px;font-size:14px;font-weight:600}
+.runtime-configuration .el-collapse-item__wrap{background:var(--panel)}
+.runtime-configuration .el-collapse-item__content{padding:0;color:var(--ink)}
+.agent-detail .agent-overview{border-radius:10px}.agent-detail .agent-identity{background:var(--panel)}
+.agent-detail .agent-identity .eyebrow{color:var(--muted);font-size:10px;letter-spacing:1px}
+.agent-detail .form-card{border-radius:10px}.agent-detail .agent-facts dd{line-height:1.7}
+.config-detail .security-note{background:var(--el-color-info-light-9);border-color:var(--line);color:var(--el-text-color-secondary)}
+.config-detail .detail-symbol,.catalog-symbol{background:var(--raised);color:var(--el-color-primary)}
+
+.agent-test-drawer .el-drawer__body{padding:0;display:flex;min-height:0;overflow:hidden}
+.agent-test-drawer .agent-test-chat{width:100%;height:100%}
+.agent-test-drawer .chat-header{padding:18px 22px}
+.agent-test-drawer .messages{padding:20px}
+.agent-test-drawer .message-content{max-width:86%}
+.agent-test-drawer .test-input-area{padding:12px 18px 18px}
+.agent-test-drawer .tool-wrap{margin-left:0}
