@@ -54,6 +54,7 @@ async fn native_tool_owner_does_not_reenter_json_bridge_or_wait_for_http_eof() {
         key: "fixture".into(),
         model: "fixture".into(),
         max_tokens: 100,
+        deepseek_effort: None,
         root: env!("CARGO_MANIFEST_DIR").into(),
     }))
     .unwrap();

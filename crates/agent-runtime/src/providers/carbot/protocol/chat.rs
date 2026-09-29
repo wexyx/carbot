@@ -20,7 +20,15 @@ impl ModelProtocol for ChatProtocol {
     ) -> reqwest::RequestBuilder {
         let mut messages = vec![json!({"role":"system","content":SYSTEM})];
         messages.extend_from_slice(history);
-        let request=http.post(format!("{}/chat/completions",cfg.base)).json(&json!({"model":cfg.model,"messages":messages,"tools":self.tools(tools),"stream":true,"max_tokens":cfg.max_tokens}));
+        let mut body = json!({"model":cfg.model,"messages":messages,"tools":self.tools(tools),"stream":true,"max_tokens":cfg.max_tokens});
+        if let Some(effort) = &cfg.deepseek_effort {
+            body["thinking"] =
+                json!({"type": if effort == "none" { "disabled" } else { "enabled" }});
+            body["reasoning_effort"] = json!(effort);
+        }
+        let request = http
+            .post(format!("{}/chat/completions", cfg.base))
+            .json(&body);
         if cfg.key.is_empty() {
             request
         } else {

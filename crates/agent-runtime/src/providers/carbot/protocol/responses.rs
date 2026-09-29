@@ -19,7 +19,11 @@ impl ModelProtocol for ResponsesProtocol {
         history: &[Value],
         tools: &ToolRegistry,
     ) -> reqwest::RequestBuilder {
-        let request=http.post(format!("{}/responses",cfg.base)).json(&json!({"model":cfg.model,"instructions":SYSTEM,"input":history,"tools":self.tools(tools),"stream":true,"store":false,"include":["reasoning.encrypted_content"],"max_output_tokens":cfg.max_tokens}));
+        let mut body = json!({"model":cfg.model,"instructions":SYSTEM,"input":history,"tools":self.tools(tools),"stream":true,"store":false,"include":["reasoning.encrypted_content"],"max_output_tokens":cfg.max_tokens});
+        if let Some(effort) = &cfg.deepseek_effort {
+            body["reasoning"] = json!({"effort":effort});
+        }
+        let request = http.post(format!("{}/responses", cfg.base)).json(&body);
         if cfg.key.is_empty() {
             request
         } else {

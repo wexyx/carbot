@@ -36,6 +36,7 @@ async fn intelligent_compression_keeps_recent_and_preserves_original_on_failure(
             key: "fixture".into(),
             model: "fixture".into(),
             max_tokens: 1024,
+            deepseek_effort: None,
             root: ".".into(),
         })
         .unwrap();

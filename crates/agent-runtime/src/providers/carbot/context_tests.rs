@@ -19,6 +19,7 @@ async fn compaction_removes_native_tool_pairs_together_for_every_protocol() {
             key: "fixture".into(),
             model: "fixture".into(),
             max_tokens: 1024,
+            deepseek_effort: None,
             root: ".".into(),
         })
         .unwrap();

@@ -11,6 +11,11 @@ defineProps({values:{type:Object,required:true},hasKey:Boolean,showProvider:{typ
   <template v-if="provider==='carbot'">
    <el-form-item label="模型厂商"><el-select v-model="values.MODEL_PROVIDER" aria-label="模型厂商"><el-option v-for="value in ['openai','anthropic','gemini','deepseek','qwen','ark','ollama','compatible']" :key="value" :value="value" :label="value"/></el-select></el-form-item>
    <el-form-item label="上下文长度"><el-input v-model="values.CONTEXT_MAX_TOKENS" placeholder="65536（含输出预留）" aria-label="上下文长度"/></el-form-item>
+   <el-form-item label="最大输出长度"><el-input v-model="values.HARNESS_MAX_TOKENS" placeholder="4096" aria-label="最大输出长度"/><small>单次请求的输出上限，不是目标字数。</small></el-form-item>
+   <template v-if="values.MODEL_PROVIDER==='deepseek' &amp;&amp; values.MODEL_API!=='anthropic'">
+    <el-form-item label="思考模式"><el-select :model-value="values.MODEL_THINKING||'disabled'" @update:model-value="values.MODEL_THINKING=$event" aria-label="思考模式"><el-option value="disabled" label="关闭 · 优先速度"/><el-option value="enabled" label="开启 · 复杂任务"/></el-select></el-form-item>
+    <el-form-item v-if="values.MODEL_THINKING==='enabled'" label="思考强度"><el-select :model-value="values.MODEL_REASONING_EFFORT||'low'" @update:model-value="values.MODEL_REASONING_EFFORT=$event" aria-label="思考强度"><el-option value="low" label="低 · 更快"/><el-option value="high" label="高"/><el-option value="max" label="最高 · 更慢"/></el-select></el-form-item>
+   </template>
    <el-form-item label="模型名称"><el-input v-model="values.MODEL_NAME" required placeholder="例如 deepseek-chat" aria-label="模型名称"/></el-form-item>
    <el-form-item label="接口地址"><el-input v-model="values.MODEL_BASE_URL" placeholder="留空使用厂商默认地址" aria-label="接口地址"/></el-form-item>
    <el-form-item label="接口协议"><el-select v-model="values.MODEL_API" aria-label="接口协议"><el-option value="" label="厂商默认"/><el-option v-for="value in ['chat','responses','anthropic']" :key="value" :value="value" :label="value"/></el-select></el-form-item>

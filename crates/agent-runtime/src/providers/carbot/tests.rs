@@ -18,6 +18,7 @@ fn protocol_factory_formats_tools_and_authentication() {
             key: "test-secret".into(),
             model: "fixture".into(),
             max_tokens: 256,
+            deepseek_effort: None,
             root: PathBuf::from("."),
         };
         let request = protocol
@@ -154,6 +155,7 @@ async fn all_three_protocols_complete_twenty_tool_roundtrips() {
                 key: "fixture".into(),
                 model: "fixture".into(),
                 max_tokens: 256,
+                deepseek_effort: None,
                 root: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
             };
             let mut output = Vec::new();

@@ -47,6 +47,7 @@ fn unknown_runtime_and_invalid_explicit_config_fail_at_factory() {
         key: "fixture".into(),
         model: "fixture".into(),
         max_tokens: 64,
+        deepseek_effort: None,
         root: ".".into(),
     };
     assert!(RuntimeFactory::from_config(RuntimeConfig::Carbot(config)).is_err());

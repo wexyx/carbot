@@ -195,6 +195,7 @@ async fn natural_language_harness_calls_registered_tools_and_persists_history() 
         key: "fixture".into(),
         model: "fixture".into(),
         max_tokens: 1024,
+        deepseek_effort: None,
         root: ".".into(),
     }))
     .await
