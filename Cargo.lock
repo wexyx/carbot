@@ -49,6 +49,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "shlex",
  "syn 2.0.119",
  "tempfile",
  "tokio",

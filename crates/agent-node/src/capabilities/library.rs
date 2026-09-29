@@ -22,6 +22,7 @@ impl Library {
         let mut result = vec![];
         for row in self.store.list("capability_library").await {
             if row["scope"] == scope && row["kind"] == kind && row["deleted"] != true {
+                let row = self.store.skill_row("capability_library", &row)?;
                 result.push(serde_json::from_value::<Resource>(row).map_err(|e| e.to_string())?);
             }
         }
@@ -35,6 +36,7 @@ impl Library {
                 if row["deleted"] == true {
                     continue;
                 }
+                let row = self.store.skill_row(collection, &row)?;
                 let definition = row[if scope == "business" {
                     "skill"
                 } else {

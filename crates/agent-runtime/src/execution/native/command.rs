@@ -64,11 +64,15 @@ impl NativeCommand {
             .env("HOME", &scratch)
             .env("TMPDIR", &scratch)
             .env("CARBOT_TMP_DIR", crate::workspace::temporary_dir(&root)?)
+            .env("CARBOT_DATA_DIR", crate::paths::data_dir())
             .env("MAC_CHROMIUM_TMPDIR", &scratch)
             .env("XDG_CONFIG_HOME", scratch.join("config"))
             .env("XDG_CACHE_HOME", scratch.join("cache"))
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .env("LANG", "en_US.UTF-8")
+            .env(
+                "LANG",
+                std::env::var_os("LANG").unwrap_or_else(|| "en_US.UTF-8".into()),
+            )
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -91,6 +95,7 @@ impl NativeCommand {
         }
         #[cfg(unix)]
         command.process_group(0);
+        crate::environment::AgentEnvironment::apply(&mut command);
         Ok(command)
     }
 }
@@ -98,8 +103,10 @@ fn resolve_binary(binary: &Path) -> Result<PathBuf, String> {
     let resolved = if binary.components().count() > 1 {
         binary.canonicalize().ok()
     } else {
-        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-            .find_map(|p| p.join(binary).canonicalize().ok())
+        std::env::split_paths(
+            &crate::environment::AgentEnvironment::lookup("PATH").unwrap_or_default(),
+        )
+        .find_map(|p| p.join(binary).canonicalize().ok())
     };
     resolved
         .filter(|p| p.is_file())

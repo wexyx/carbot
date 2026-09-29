@@ -15,6 +15,7 @@ impl Manager {
             if row["project_id"] != json!(project) || row["deleted"] == true {
                 continue;
             }
+            let row = self.core().state().store.skill_row(collection, &row)?;
             rows.push(if scope == "management" {
                 json!({"definition":row["definition"],"version":row["version"],"readonly":false})
             } else {

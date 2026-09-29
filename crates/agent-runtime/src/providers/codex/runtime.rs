@@ -9,11 +9,13 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 pub(crate) struct Runtime {
     config: CodexConfig,
+    launch: super::super::launch_command::LaunchCommand,
 }
 
 impl Runtime {
     pub(crate) fn new(config: CodexConfig) -> Result<Self, String> {
-        Ok(Self { config })
+        let launch = config.launch()?;
+        Ok(Self { config, launch })
     }
 }
 
@@ -35,7 +37,7 @@ impl crate::providers::Provider for Runtime {
                         .join(".codex")
                 })
                 .join("auth.json");
-            if std::env::var_os("OPENAI_API_KEY").is_none() {
+            if crate::environment::AgentEnvironment::lookup("OPENAI_API_KEY").is_none() {
                 process
                     .import_credential(
                         &self.config.workdir,
@@ -44,10 +46,11 @@ impl crate::providers::Provider for Runtime {
                     )
                     .await?;
             }
-            let mut command = process.command(&self.config.binary, &self.config.workdir)?;
+            let mut command = process.command(self.launch.binary(), &self.config.workdir)?;
+            command.args(self.launch.arguments());
             command.env("CODEX_HOME", process.scratch().join(".codex"));
             for key in ["OPENAI_API_KEY", "OPENAI_BASE_URL"] {
-                if let Some(value) = std::env::var_os(key) {
+                if let Some(value) = crate::environment::AgentEnvironment::lookup(key) {
                     command.env(key, value);
                 }
             }

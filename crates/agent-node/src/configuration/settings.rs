@@ -9,9 +9,10 @@ const KEYS: &[&str] = &[
     "MODEL_BASE_URL",
     "MODEL_API",
     "CONTEXT_MAX_TOKENS",
-    "CONTEXT_STRATEGY",
+    "CONTEXT_RECENT_TURNS",
     "CODEX_BIN",
     "CLAUDE_BIN",
+    "AGENT_ENV_JSON",
 ];
 
 #[derive(Default, Clone)]
@@ -57,9 +58,18 @@ impl Settings {
     pub(crate) fn public_view(&self) -> serde_json::Value {
         let mut values = self.values.clone();
         values.remove("MODEL_API_KEY");
+        values.remove("CONTEXT_STRATEGY");
+        if let Some(raw) = values.get("AGENT_ENV_JSON") {
+            let masked = agent_runtime::environment::AgentEnvironment::from_json(raw)
+                .map(|env| env.masked_json())
+                .unwrap_or_else(|_| "{}".into());
+            values.insert("AGENT_ENV_JSON".into(), masked);
+        }
         serde_json::json!({"values": values, "has_api_key": !self.get("MODEL_API_KEY").is_empty()})
     }
-    pub(crate) fn update(&mut self, values: BTreeMap<String, String>) -> Result<(), String> {
+    pub(crate) fn update(&mut self, mut values: BTreeMap<String, String>) -> Result<(), String> {
+        // Accept old clients without retaining an obsolete user-facing strategy selector.
+        values.remove("CONTEXT_STRATEGY");
         if values.keys().any(|key| !KEYS.contains(&key.as_str())) {
             return Err("unknown default Agent configuration field".into());
         }
@@ -69,32 +79,63 @@ impl Settings {
                 .cloned()
                 .or_else(|| self.values.get(key).cloned())
         })?;
+        if let Some(value) = values.get("CONTEXT_RECENT_TURNS").filter(|v| !v.is_empty()) {
+            if !value.parse::<usize>().is_ok_and(|n| (1..=100).contains(&n)) {
+                return Err("CONTEXT_RECENT_TURNS must be 1..100".into());
+            }
+        }
+        if let Some(raw) = values.get("AGENT_ENV_JSON") {
+            let env = agent_runtime::environment::AgentEnvironment::merge(
+                self.get("AGENT_ENV_JSON"),
+                raw,
+            )?;
+            values.insert("AGENT_ENV_JSON".into(), env.to_json());
+        }
         self.values.extend(values);
         Ok(())
     }
     pub(crate) fn set(&mut self, key: &str, value: String) {
         self.values.insert(key.into(), value);
     }
+    pub(crate) fn merge_values(
+        previous: BTreeMap<String, String>,
+        update: BTreeMap<String, String>,
+    ) -> Result<BTreeMap<String, String>, String> {
+        let mut settings = Self { values: previous };
+        settings.update(update)?;
+        Ok(settings.values)
+    }
     pub(crate) fn runtime(&self) -> Result<RuntimeConfig, String> {
+        let environment =
+            agent_runtime::environment::AgentEnvironment::from_json(self.get("AGENT_ENV_JSON"))?;
         match self.get("ADMIN_AGENT_PROVIDER") {
             "" | "carbot" => Ok(RuntimeConfig::Carbot(HarnessConfig::from_lookup(|key| {
-                self.values
-                    .get(key)
-                    .cloned()
-                    .or_else(|| std::env::var(key).ok())
+                if key == "CONTEXT_STRATEGY" {
+                    return Some("extractive".into());
+                }
+                environment.get(key).cloned().or_else(|| {
+                    self.values
+                        .get(key)
+                        .cloned()
+                        .or_else(|| std::env::var(key).ok())
+                })
             })?)),
             "codex" => {
                 let mut cfg = CodexConfig::from_env();
+                cfg.environment = environment;
                 if !self.get("CODEX_BIN").is_empty() {
                     cfg.binary = self.get("CODEX_BIN").into();
                 }
+                cfg.validate_launch()?;
                 Ok(RuntimeConfig::Codex(cfg))
             }
             "claude" => {
                 let mut cfg = ClaudeConfig::from_env();
+                cfg.environment = environment;
                 if !self.get("CLAUDE_BIN").is_empty() {
                     cfg.binary = self.get("CLAUDE_BIN").into();
                 }
+                cfg.validate_launch()?;
                 Ok(RuntimeConfig::Claude(cfg))
             }
             "mock" => Ok(RuntimeConfig::Mock),
@@ -125,6 +166,44 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn environment_roundtrip_is_private_and_masked_edits_preserve_secrets() {
+        let mut settings = Settings::default();
+        settings
+            .update(BTreeMap::from([
+                ("ADMIN_AGENT_PROVIDER".into(), "claude".into()),
+                (
+                    "AGENT_ENV_JSON".into(),
+                    r#"{"ANTHROPIC_API_KEY":"private-token","DROP":"old"}"#.into(),
+                ),
+            ]))
+            .unwrap();
+        assert!(!settings.public_view().to_string().contains("private-token"));
+        settings
+            .update(BTreeMap::from([(
+                "AGENT_ENV_JSON".into(),
+                r#"{"ANTHROPIC_API_KEY":null,"CUSTOM":"yes"}"#.into(),
+            )]))
+            .unwrap();
+        let RuntimeConfig::Claude(config) = settings.runtime().unwrap() else {
+            panic!("wrong provider")
+        };
+        assert_eq!(
+            config.environment.get("ANTHROPIC_API_KEY").unwrap(),
+            "private-token"
+        );
+        assert!(config.environment.get("DROP").is_none());
+        let dir = tempfile::tempdir().unwrap();
+        settings
+            .save_to(&dir.path().join("default-agent.json"))
+            .unwrap();
+        assert_eq!(
+            Settings::load_saved(dir.path())
+                .unwrap()
+                .get("AGENT_ENV_JSON"),
+            settings.get("AGENT_ENV_JSON")
+        );
+    }
     #[test]
     fn loads_default_configuration_and_rejects_corruption() {
         let dir = tempfile::tempdir().unwrap();

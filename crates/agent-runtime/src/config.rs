@@ -19,6 +19,14 @@ pub enum RuntimeConfig {
     Codex(CodexConfig),
 }
 impl RuntimeConfig {
+    pub(crate) fn environment(&self) -> crate::environment::AgentEnvironment {
+        match self {
+            Self::Mock => Default::default(),
+            Self::Carbot(cfg) => cfg.environment.clone(),
+            Self::Codex(cfg) => cfg.environment.clone(),
+            Self::Claude(cfg) => cfg.environment.clone(),
+        }
+    }
     /// Apply the host's execution-local directory uniformly for all providers.
     pub fn with_workspace(mut self) -> Self {
         if let Some(root) = crate::workspace::WorkspaceSettings::root() {
@@ -40,11 +48,22 @@ impl RuntimeConfig {
         }
     }
     pub fn from_env(kind: RuntimeKind) -> Result<Self, String> {
+        let environment = crate::environment::AgentEnvironment::from_json(
+            &std::env::var("AGENT_ENV_JSON").unwrap_or_default(),
+        )?;
         Ok(match kind {
             RuntimeKind::Mock => Self::Mock,
             RuntimeKind::Carbot => Self::Carbot(HarnessConfig::from_env()?),
-            RuntimeKind::Claude => Self::Claude(ClaudeConfig::from_env()),
-            RuntimeKind::Codex => Self::Codex(CodexConfig::from_env()),
+            RuntimeKind::Claude => {
+                let mut cfg = ClaudeConfig::from_env();
+                cfg.environment = environment;
+                Self::Claude(cfg)
+            }
+            RuntimeKind::Codex => {
+                let mut cfg = CodexConfig::from_env();
+                cfg.environment = environment;
+                Self::Codex(cfg)
+            }
         })
     }
 }

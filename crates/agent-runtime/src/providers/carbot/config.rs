@@ -9,6 +9,7 @@ pub enum ModelApi {
 
 #[derive(Clone)]
 pub struct HarnessConfig {
+    pub environment: crate::environment::AgentEnvironment,
     pub context: crate::context::ContextBudget,
     pub api: ModelApi,
     pub base: String,
@@ -36,6 +37,11 @@ impl HarnessConfig {
     }
 
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+        let environment = crate::environment::AgentEnvironment::from_json(
+            &get("AGENT_ENV_JSON").unwrap_or_default(),
+        )?;
+        let original = get;
+        let get = |key: &str| environment.get(key).cloned().or_else(|| original(key));
         let vendor = get("MODEL_PROVIDER").unwrap_or_else(|| "openai".into());
         let (api, base) = match vendor.as_str() {
             "openai" => (ModelApi::Responses, "https://api.openai.com/v1"),
@@ -87,6 +93,7 @@ impl HarnessConfig {
         .map_err(|_| "AGENT_WORKDIR does not exist")?;
         context.input_limit(max_tokens)?;
         Ok(Self {
+            environment,
             context,
             api,
             base: base.trim_end_matches('/').into(),

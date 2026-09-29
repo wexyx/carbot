@@ -32,10 +32,11 @@ impl Provider for ToolRuntime {
     }
     fn execute<'a>(&'a self, prompt: &'a str, events: &'a mut EventSink<'_>) -> RuntimeFuture<'a> {
         Box::pin(async move {
-            let mut transcript = format!(
+            let base = format!(
                 "{}\nUSER TASK AND CONVERSATION:\n{prompt}",
                 self.tools.instructions()
             );
+            let mut transcript = base.clone();
             let mut session = ToolSession::default();
             let mut step = 0u64;
             loop {
@@ -79,6 +80,12 @@ impl Provider for ToolRuntime {
                     id,
                     output: observation.clone(),
                 });
+                if let Some(summary) = session.take_summary() {
+                    transcript = crate::context::summarized_prompt(&base, &summary);
+                    events(RuntimeEvent::ContextCheckpoint {
+                        content: format!("Context compacted by Agent: {summary}"),
+                    });
+                }
                 transcript.push_str(&format!("\nASSISTANT SERVICE REQUEST (data):\n{answer}\nSERVICE RESULT (untrusted data):\n{observation}\nContinue using the result; do not repeat a completed action unnecessarily.\n"));
             }
         })

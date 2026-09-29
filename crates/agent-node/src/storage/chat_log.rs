@@ -231,6 +231,9 @@ fn files(dir: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(paths)
 }
 fn scan(dir: &Path, after: u64, before: u64, limit: usize) -> Result<Vec<Value>, String> {
+    if after == 0 {
+        return super::log_tail::read(files(dir)?, before, limit);
+    }
     let mut result = std::collections::VecDeque::new();
     for path in files(dir)? {
         let mut reader = BufReader::new(File::open(&path).map_err(|e| e.to_string())?);

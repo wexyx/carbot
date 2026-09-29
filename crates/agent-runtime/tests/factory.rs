@@ -40,6 +40,7 @@ fn unknown_runtime_and_invalid_explicit_config_fail_at_factory() {
         matches!(RuntimeFactory::create("unknown"),Err(e) if e.contains("Unknown AGENT_PROVIDER"))
     );
     let config = HarnessConfig {
+        environment: Default::default(),
         context: Default::default(),
         api: ModelApi::Chat,
         base: "file:///private".into(),
@@ -86,14 +87,23 @@ mod cli {
             Self(root)
         }
         fn runtime(&self, kind: RuntimeKind) -> Box<dyn agent_runtime::AgentRuntime> {
+            self.runtime_command(kind, self.0.join("fake-cli"))
+        }
+        fn runtime_command(
+            &self,
+            kind: RuntimeKind,
+            binary: std::path::PathBuf,
+        ) -> Box<dyn agent_runtime::AgentRuntime> {
             let config = match kind {
                 RuntimeKind::Claude => RuntimeConfig::Claude(ClaudeConfig {
-                    binary: self.0.join("fake-cli"),
+                    environment: Default::default(),
+                    binary,
                     permission_mode: "plan".into(),
                     workdir: self.0.clone(),
                 }),
                 RuntimeKind::Codex => RuntimeConfig::Codex(CodexConfig {
-                    binary: self.0.join("fake-cli"),
+                    environment: Default::default(),
+                    binary,
                     sandbox: "read-only".into(),
                     workdir: self.0.clone(),
                 }),
@@ -108,6 +118,36 @@ mod cli {
         }
     }
 
+    #[tokio::test]
+    async fn both_cli_launchers_accept_quoted_commands_and_keep_managed_flags() {
+        for kind in [RuntimeKind::Claude, RuntimeKind::Codex] {
+            let output = if kind == RuntimeKind::Claude {
+                r#"printf '%s\n' '{"type":"result","result":"ok"}'"#
+            } else {
+                r#"printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}'"#
+            };
+            let fixture = Fixture::new(output);
+            let spaced = fixture.0.join("fake cli");
+            std::fs::rename(fixture.0.join("fake-cli"), &spaced).unwrap();
+            let command = format!("\"{}\" --model 'model with spaces'", spaced.display());
+            assert_eq!(
+                fixture
+                    .runtime_command(kind, command.into())
+                    .run("hello", &mut |_| {})
+                    .await
+                    .unwrap(),
+                "ok"
+            );
+            let arguments = std::fs::read_to_string(fixture.0.join("arguments.txt")).unwrap();
+            assert!(arguments.starts_with("--model\nmodel with spaces\n"));
+            assert!(arguments.contains(if kind == RuntimeKind::Claude {
+                "--output-format\nstream-json"
+            } else {
+                "exec\n--json"
+            }));
+            assert_eq!(arguments.lines().last(), Some("hello"));
+        }
+    }
     #[tokio::test]
     async fn cli_factories_preserve_streaming_flags_and_working_directory() {
         for (kind, output, flag) in [

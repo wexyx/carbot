@@ -2,8 +2,9 @@ import {createRequire} from 'node:module'
 import {mkdtemp,mkdir,lstat,rm} from 'node:fs/promises'
 import {basename,dirname,join,resolve} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
+import {ensureRuntime,runtimeDirectory} from './runtime.mjs'
 
-const runtime=join(dirname(fileURLToPath(import.meta.url)),'.runtime')
+const runtime=runtimeDirectory()
 process.env.PUPPETEER_CACHE_DIR=join(runtime,'browsers')
 const require=createRequire(join(runtime,'package.json'))
 async function temporaryRoot(){
@@ -20,6 +21,7 @@ async function temporaryRoot(){
  return root
 }
 export async function withBrowser(work){
+ await ensureRuntime()
  let puppeteer
  try{puppeteer=(await import(pathToFileURL(require.resolve('puppeteer')).href)).default}
  catch{throw Error('请先运行此 Skill 的 node install.mjs 安装 Puppeteer 和浏览器。')}

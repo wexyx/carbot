@@ -255,7 +255,11 @@ impl Manager {
         if history["persistence_failed"] == true {
             return Err("previous persistence failed; repair storage and restart before continuing this session".into());
         }
-        let records = super::history::context(&history["events"]);
+        let records = format!(
+            "{}\n{}",
+            crate::core::recent_context::NOTICE,
+            super::history::context(&history["events"])
+        );
 
         let registry = self.registry(project).await?;
         let catalog = skills::catalog(&self.core, project).await?;

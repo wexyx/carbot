@@ -102,6 +102,7 @@ impl RuntimeFactory {
                 crate::workspace::WorkspaceSettings::root().unwrap_or_else(crate::config::workdir)
             }
         };
+        let environment = config.environment();
         let provider: Box<dyn providers::Provider> = match config {
             RuntimeConfig::Mock => Box::new(providers::mock::Runtime::new()),
             RuntimeConfig::Carbot(config) => Box::new(providers::carbot::Runtime::new(
@@ -120,6 +121,7 @@ impl RuntimeFactory {
         };
         Ok(Box::new(
             crate::managed_runtime::ManagedRuntime::new(provider)
+                .with_environment(environment)
                 .with_attachment_root(attachment_root)
                 .retain_workspace(workspace),
         ))

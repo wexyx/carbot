@@ -119,6 +119,12 @@ impl Store {
     pub(crate) fn logs(&self) -> &super::ChatLog {
         &self.0.logs
     }
+    pub(crate) fn skill_row(&self, collection: &str, row: &Value) -> Result<Value, String> {
+        match self.0.file.as_ref().and_then(|p| p.parent()) {
+            Some(root) => super::skill_files::hydrate(root, collection, row),
+            None => Ok(row.clone()),
+        }
+    }
     pub async fn get(&self, c: &str, k: &str) -> Option<Value> {
         self.0.data.lock().unwrap().get(c, k).cloned()
     }
@@ -148,7 +154,7 @@ impl Store {
                 return Err(error);
             }
         };
-        let changes: Vec<_> = data
+        let mut changes: Vec<_> = data
             .undo
             .as_ref()
             .unwrap()
@@ -169,6 +175,32 @@ impl Store {
                 return Err("state sequence overflow".into());
             };
             if let Some(path) = &self.0.file {
+                for change in &mut changes {
+                    if change.deleted {
+                        continue;
+                    }
+                    match super::skill_files::persist(
+                        path.parent().unwrap(),
+                        &change.collection,
+                        &change.key,
+                        &change.value,
+                    ) {
+                        Ok(value) => {
+                            // Keep definitions hydrated for transaction validation, but publish
+                            // only references to their files in the durable JSONL journal.
+                            if let Some(pointer) = value.get("skill_files_directory") {
+                                let mut hydrated = change.value.clone();
+                                hydrated["skill_files_directory"] = pointer.clone();
+                                data.set(&change.collection, &change.key, hydrated);
+                            }
+                            change.value = value;
+                        }
+                        Err(error) => {
+                            data.rollback();
+                            return Err(error);
+                        }
+                    }
+                }
                 if let Err(error) = super::state_journal::append(path, sequence, changes) {
                     data.rollback();
                     return Err(error);
@@ -258,6 +290,13 @@ pub async fn open(dir: &FilePath) -> Result<Store, String> {
     }
     let journal = dir.join("state.jsonl");
     super::state_journal::replay(&journal, &mut data)?;
+    for collection in ["skills", "management_skills", "capability_library"] {
+        if let Some(rows) = data.collections.get_mut(collection) {
+            for row in rows.values_mut() {
+                *row = super::skill_files::hydrate(dir, collection, row)?;
+            }
+        }
+    }
     Ok(Store(Arc::new(Inner {
         logs,
         data: std::sync::Mutex::new(data),

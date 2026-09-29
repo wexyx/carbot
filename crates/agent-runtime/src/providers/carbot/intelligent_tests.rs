@@ -24,6 +24,7 @@ async fn intelligent_compression_keeps_recent_and_preserves_original_on_failure(
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let client = ModelClient::new(HarnessConfig {
+            environment: Default::default(),
             context: ContextBudget::from_lookup(|k| match k {
                 "CONTEXT_MAX_TOKENS" => Some("8192".into()),
                 "CONTEXT_STRATEGY" => Some("intelligent".into()),

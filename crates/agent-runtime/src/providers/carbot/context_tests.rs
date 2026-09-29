@@ -9,6 +9,7 @@ use serde_json::json;
 async fn compaction_removes_native_tool_pairs_together_for_every_protocol() {
     for api in [ModelApi::Chat, ModelApi::Responses, ModelApi::Anthropic] {
         let client = ModelClient::new(HarnessConfig {
+            environment: Default::default(),
             context: ContextBudget::from_lookup(|key| {
                 (key == "CONTEXT_MAX_TOKENS").then(|| "8192".into())
             })

@@ -26,6 +26,7 @@ async fn capability_packages_are_disjoint_and_skills_are_scoped() {
         .map(|d| d.name().to_string())
         .collect::<Vec<_>>();
     assert!(names.contains(&"group_create".into()) && names.contains(&"skill_read".into()));
+    assert!(names.contains(&"history_read".into()));
     assert!(!names.contains(&"python_run".into()) && !names.contains(&"read_file".into()));
     let business = ToolFactory::create(
         ToolContext::new(
@@ -36,6 +37,12 @@ async fn capability_packages_are_disjoint_and_skills_are_scoped() {
         .unwrap(),
     )
     .unwrap();
+    for registry in [&manager, &business] {
+        for strategy in ["summary", "recent"] {
+            let result=registry.execute("history_read",&json!({"action":"compact","strategy":strategy,"summary":"Keep decisions and outstanding work"}),&mut ToolSession::default()).await.unwrap();
+            assert_eq!(result["status"], "scheduled");
+        }
+    }
     assert!(
         !business
             .definitions()
@@ -181,6 +188,7 @@ async fn natural_language_harness_calls_registered_tools_and_persists_history() 
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let (m, p) = fixture().await;
     m.configure(RuntimeConfig::Carbot(HarnessConfig {
+        environment: Default::default(),
         context: Default::default(),
         api: ModelApi::Chat,
         base,

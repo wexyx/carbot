@@ -44,4 +44,5 @@ mod member_events;
 mod command_allowlist;
 
 pub(crate) mod log_history;
+pub(crate) mod recent_context;
 mod response_instructions;

@@ -29,8 +29,15 @@ impl ToolDefinition {
 #[derive(Default)]
 pub struct ToolSession {
     loaded_skills: HashSet<String>,
+    pending_summary: Option<String>,
 }
 impl ToolSession {
+    pub(crate) fn summarize(&mut self, summary: String) {
+        self.pending_summary = Some(summary);
+    }
+    pub(crate) fn take_summary(&mut self) -> Option<String> {
+        self.pending_summary.take()
+    }
     pub(crate) fn loaded(&self, id: &str) -> bool {
         self.loaded_skills.contains(id)
     }

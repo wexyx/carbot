@@ -22,17 +22,30 @@ impl Wizard {
                 "carbot",
                 false,
             )
+        } else if self.step
+            == if self.settings.get("ADMIN_AGENT_PROVIDER") == "carbot" {
+                6
+            } else {
+                2
+            }
+        {
+            (
+                "AGENT_ENV_JSON",
+                "环境变量 JSON（可选，如 {\"ANTHROPIC_API_KEY\":\"...\"}）",
+                "",
+                true,
+            )
         } else if self.settings.get("ADMIN_AGENT_PROVIDER") == "codex" {
             (
                 "CODEX_BIN",
-                "Codex 可执行文件（需安装和认证）",
+                "Codex 启动命令（可带参数，需安装和认证）",
                 "codex",
                 false,
             )
         } else if self.settings.get("ADMIN_AGENT_PROVIDER") == "claude" {
             (
                 "CLAUDE_BIN",
-                "Claude 可执行文件（需安装和认证）",
+                "Claude 启动命令（可带参数，需安装和认证）",
                 "claude",
                 false,
             )
@@ -87,9 +100,9 @@ impl Wizard {
             "配置 {}/{} · {} [{}] · - 清空 / Esc 取消",
             self.step + 1,
             if self.step > 0 && self.settings.get("ADMIN_AGENT_PROVIDER") != "carbot" {
-                2
+                3
             } else {
-                6
+                7
             },
             field.label,
             default
@@ -109,12 +122,19 @@ impl Wizard {
         if self.step == 0 && !matches!(value.as_str(), "carbot" | "codex" | "claude") {
             return Err("请选择 carbot、codex 或 claude。".into());
         }
-        self.settings.set(self.field().key, value);
+        if self.field().key == "AGENT_ENV_JSON" {
+            self.settings.update(std::collections::BTreeMap::from([(
+                "AGENT_ENV_JSON".into(),
+                value,
+            )]))?;
+        } else {
+            self.settings.set(self.field().key, value);
+        }
         self.step += 1;
         let end = if self.settings.get("ADMIN_AGENT_PROVIDER") == "carbot" {
-            6
+            7
         } else {
-            2
+            3
         };
         if self.step >= end {
             self.step = 0;

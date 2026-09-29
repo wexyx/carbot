@@ -62,8 +62,15 @@ impl<'a> Run<'a> {
                 });
                 results.insert(index, result);
             }
+            let batch_start = self.history.len();
             self.client
                 .append_history(&mut self.history, &turn, &results);
+            if let Some(summary) = self.session.take_summary() {
+                crate::context::apply_summary(&mut self.history, batch_start, &summary);
+                events(RuntimeEvent::ContextCheckpoint {
+                    content: format!("Context compacted by Agent: {summary}"),
+                });
+            }
         }
     }
 }

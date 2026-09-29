@@ -47,6 +47,7 @@ async fn native_tool_owner_does_not_reenter_json_bridge_or_wait_for_http_eof() {
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let runtime = RuntimeFactory::from_config(RuntimeConfig::Carbot(HarnessConfig {
+        environment: Default::default(),
         context: Default::default(),
         api: ModelApi::Chat,
         base: format!("http://{address}"),

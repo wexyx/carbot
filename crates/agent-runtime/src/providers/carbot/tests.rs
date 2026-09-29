@@ -11,6 +11,7 @@ fn protocol_factory_formats_tools_and_authentication() {
     ] {
         let protocol = ProtocolFactory::create(api);
         let cfg = Config {
+            environment: Default::default(),
             context: Default::default(),
             api,
             base: "http://localhost/v1".into(),
@@ -146,6 +147,7 @@ async fn all_three_protocols_complete_twenty_tool_roundtrips() {
             let address = listener.local_addr().unwrap();
             let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
             let cfg = Config {
+                environment: Default::default(),
                 context: Default::default(),
                 api,
                 base: format!("http://{address}"),

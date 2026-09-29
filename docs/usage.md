@@ -31,6 +31,18 @@ Web 使用 Vue 3 + Element Plus。终端与 Web 共享同一应用层、Agent、
 
 编辑角色与测试聊天使用右侧抽屉；测试会话单独持久化。远端目录在后台发现，不阻塞本地 Agent 操作。
 
+### Claude 与 Codex 启动命令
+
+Claude / Codex 的运行器配置支持启动命令，例如 `claude`、`claude --model sonnet`、`codex --model 模型名`，也支持 `"/带空格的路径/claude" --model sonnet`。Web 与 CLI 配置向导均可填写，仍保存在兼容原配置的 `CLAUDE_BIN` / `CODEX_BIN` 字段中。程序按 PATH 查找，参数按引号拆分，不执行 Shell 展开、管道或重定向；流式输出、任务提示词、执行权限和会话参数由 Carbot 添加，请勿重复填写。
+
+### Agent 环境变量
+
+默认 Agent 和普通本地 Agent 的配置表单都有“环境变量”键值表，支持新增、修改和删除；CLI 配置向导支持填写 JSON，例如 `{"ANTHROPIC_API_KEY":"...","ANTHROPIC_BASE_URL":"https://your-endpoint","LANG":"zh_CN.UTF-8"}`，回车保留、`-` 清空。启动文件也可使用 `AGENT_ENV_JSON`。
+
+变量仅注入当前 Agent 及其工具进程，不修改服务器的全局环境；配置值优先于透传的宿主变量。Carbot 的模型配置也可通过 `MODEL_*` 环境变量覆盖，并支持独立 HTTP/HTTPS 代理。`LANG` 默认跟随启动环境，仅影响子进程区域设置，不限制 Agent 回复语言。
+
+值不在配置查询中回显，编辑时未改动的值保留；本地明文保存，请妥善保护实例目录。`HOME`、`TMPDIR`、`CODEX_HOME`、`CARBOT_*`、`AGENT_*` 等运行目录/控制变量由宿主管理，不能通过 Agent 配置覆盖。每个 Agent 最多 64 个变量；值不做 Shell 展开。
+
 ### Tool 与 Skill
 
 定义统一维护，管理能力与项目能力隔离。内置工具只能启用/禁用；非硬编码外部命令与 Skill 支持新增、编辑、上传、删除及测试。
@@ -84,16 +96,16 @@ Agent 可配置回复要求（默认简洁、结论先行），作为每次调�
 
 Web 聊天右上角「新上下文」与 CLI `/new` 使用同一分界机制：保留项目成员、策略和全部原始 JSONL 日志，但后续请求不再携带分界前的聊天内容。管理聊天也支持；执行中需先停止或等待。分界持久化，重启后仍生效。`/history` 仍只展示历史，不撤销分界。
 
-Carbot Harness 的 Agent 编辑表单支持上下文预算与压缩策略；默认 Agent 在其模型配置中修改，普通 Agent 可继承或独立配置：
+每次默认只携带最近 8 轮人类对话，排除已完成回答的流式碎片和原始工具输出。更早记录不删除，通过 `history_read` 按需读取；实例的 `CONTEXT_RECENT_TURNS` 可设置为 1–100。读取最近日志从文件尾部向前定位，不再扫描全部旧记录。
 
-- `CONTEXT_MAX_TOKENS`：默认 65536，范围 8192–2000000。采用保守的 UTF-8 字节数估算，不是模型专用 tokenizer；应设为不超过所用模型窗口。实际请求包含系统提示、工具 schema，并预留输出预算（默认 4096）。
-- `CONTEXT_STRATEGY=extractive`：默认，本地首尾摘录。
-- `CONTEXT_STRATEGY=window`：保留近期片段。
-- `CONTEXT_STRATEGY=disabled`：禁用压缩，超限提示新上下文或调整预算。
+管理与项目共用 `history_read`：
+- `action=read`：列出当前会话日志，或按文件名与行号读取。
+- `action=compact, strategy=summary, summary=...`：Agent 自行总结并提交需要保留的决策、约束、进度与历史引用。
+- `action=compact, strategy=recent`：仅保留原始任务与最新完整工具轮次，较早工具过程按需回查。
 
-两种压缩都是有损文本摘录，不是额外调用模型生成的语义摘要。当前请求、管理指引及系统提示不会主动截断；单条当前请求或工具定义本身过大仍需缩短或增加预算。压缩在完整工具轮次之间执行，避免留下孤立的工具调用 ID；日志不被覆盖。上述预算配置作用于 Carbot Harness；Codex/Claude 原生模型上下文管理仍由各自 CLI 负责，`/new` 的 Carbot 历史分界对所有运行器生效。
+Agent 配置中不再提供压缩策略选项。压缩在完整工具轮次结束后应用，原始任务、系统规则、当前工具调用与结果保持完整，原始日志不覆盖；模型需要更多细节时再次调用同一工具。
 
-Rust 采用 `CompressionStrategy` 接口、`CompressionFactory` 工厂，具体策略各自独立文件，`ContextBudget` 负责预算编排。
+Carbot Harness 仍保留 `CONTEXT_MAX_TOKENS` 长度上限（默认 65536），包含工具定义并预留输出空间。超限时宿主执行本地有损摘录或明确报错，不依赖模型自行发现溢出，不额外请求模型生成摘要。Codex/Claude 自身的上下文上限仍由各自 CLI 管理。
 
 ### CLI 常用操作
 
@@ -153,3 +165,9 @@ CLI 启动不自动打印历史，使用 `/history` 恢复。鼠标保留终端�
 内置 Skill 源码在 `skills/system/{business,management}/<skill>/`，每个目录包含 `SKILL.md`、`skill.json`（描述和默认启用状态），可附带 `scripts/`、`references/`。`scripts/package-release.sh` 自动将其放入发布包 `skills/system`；`install.sh` 随程序复制到版本目录，启动器通过 `CARBOT_SYSTEM_SKILLS_DIR` 定位。也可显式指定这个环境变量覆盖来源。
 
 系统 Skill 在工具库中只读，可通过已有生效范围规则启用/禁用；安装升级不写入用户 Skill 或实例数据。内置依赖安装、浏览器自动化、OCR Skill 只提供按需工作流，不会在安装 Carbot 时自动安装 Homebrew、浏览器或 Tesseract，也不会绕过执行确认。
+
+新建或上传的 Skill 保存在当前实例的 `skills/user/` 下：默认是 `~/.carbot/skills/user/`，命名实例是 `~/.carbot_<别名>/skills/user/`；使用 `--data-dir` 时跟随指定的数据目录。项目与管理 Skill 分别放在 `business/`、`management/` 中，正文 `SKILL.md` 和脚本、参考资料都以独立文件保存。内置 Skill 仍留在发布包目录，不会复制到实例目录。
+
+Skill 的运行依赖与源码分开保存。浏览器依赖统一位于 `<实例数据目录>/runtime/browser-automation/.runtime/`，`browser_run`、`install.mjs` 和 `browser.mjs` 共用该目录。已有依赖跨重启和升级复用；Puppeteer 或匹配的浏览器缺失时自动进入构建流程，仍遵循当前执行授权。不会搜索或修改旧 release、源码仓库或 `~/.browser-skill` 中的依赖；Node.js 与 npm 需提前安装。
+
+每个用户 Skill 按“名称与标识 / 保存版本”分目录，保存后在状态日志中记录当前目录引用，不再把正文与脚本写入该条日志。这样保存失败不会覆盖上一版；旧版本文件保留用于恢复，删除 Skill 后不会继续加载它。推荐通过 Web 编辑，直接修改当前版本的文件也会在下次加载 Skill 时生效。旧版已存于日志的自建 Skill 仍兼容读取，下次保存时会写入实例目录。

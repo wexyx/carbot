@@ -17,10 +17,44 @@ pub(super) struct ModelClient {
 impl ModelClient {
     pub(super) fn new(config: HarnessConfig) -> Result<Self, String> {
         let protocol = ProtocolFactory::create(config.api);
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(180))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(180));
+        if [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "NO_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+            "no_proxy",
+        ]
+        .iter()
+        .any(|key| config.environment.get(key).is_some())
+        {
+            builder = builder.no_proxy();
+            let lookup = |key: &str| {
+                config
+                    .environment
+                    .get(key)
+                    .or_else(|| config.environment.get(&key.to_ascii_lowercase()))
+                    .cloned()
+                    .or_else(|| std::env::var(key).ok())
+                    .or_else(|| std::env::var(key.to_ascii_lowercase()).ok())
+            };
+            let bypass = lookup("NO_PROXY").and_then(|s| reqwest::NoProxy::from_string(&s));
+            for key in ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"] {
+                if let Some(value) = lookup(key).filter(|v| !v.is_empty()) {
+                    let proxy = match key {
+                        "HTTPS_PROXY" => reqwest::Proxy::https(&value),
+                        "HTTP_PROXY" => reqwest::Proxy::http(&value),
+                        _ => reqwest::Proxy::all(&value),
+                    }
+                    .map_err(|_| "Agent 代理地址无效")?;
+                    builder = builder.proxy(proxy.no_proxy(bypass.clone()));
+                }
+            }
+        }
+        let http = builder.build().map_err(|e| e.to_string())?;
         Ok(Self {
             http,
             config,

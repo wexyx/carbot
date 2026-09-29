@@ -19,7 +19,7 @@ const KEYS: &[&str] = &[
     "MODEL_BASE_URL",
     "MODEL_API",
     "CONTEXT_MAX_TOKENS",
-    "CONTEXT_STRATEGY",
+    "CONTEXT_RECENT_TURNS",
     "WEB_CONFIG_ORIGINS",
     "WEB_CONFIG_DIR",
     "CARBOT_ALLOW_SKILL_PYTHON",
@@ -33,6 +33,7 @@ const KEYS: &[&str] = &[
     "NODE_LINKS_JSON",
     "CODEX_BIN",
     "CLAUDE_BIN",
+    "AGENT_ENV_JSON",
 ];
 
 /// Configuration discovery is performed once, before any runtime threads exist.

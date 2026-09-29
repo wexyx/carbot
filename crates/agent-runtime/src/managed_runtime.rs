@@ -5,6 +5,7 @@ pub(crate) struct ManagedRuntime {
     provider: Box<dyn Provider>,
     attachment_root: std::path::PathBuf,
     _workspace: Option<tempfile::TempDir>,
+    environment: crate::environment::AgentEnvironment,
 }
 impl ManagedRuntime {
     pub(crate) fn new(provider: Box<dyn Provider>) -> Self {
@@ -12,10 +13,18 @@ impl ManagedRuntime {
             provider,
             attachment_root: crate::config::workdir(),
             _workspace: None,
+            environment: Default::default(),
         }
     }
     pub(crate) fn with_attachment_root(mut self, root: std::path::PathBuf) -> Self {
         self.attachment_root = root;
+        self
+    }
+    pub(crate) fn with_environment(
+        mut self,
+        environment: crate::environment::AgentEnvironment,
+    ) -> Self {
+        self.environment = environment;
         self
     }
     pub(crate) fn retain_workspace(mut self, workspace: Option<tempfile::TempDir>) -> Self {
@@ -33,28 +42,30 @@ impl crate::AgentRuntime for ManagedRuntime {
         events: &'a mut crate::EventSink<'_>,
     ) -> crate::RuntimeFuture<'a> {
         Box::pin(async move {
-            let result = async {
-                let source = prompt.to_owned();
-                let root = self.attachment_root.clone();
-                let (prompt, attachments) = tokio::task::spawn_blocking(move || {
-                    crate::attachments::PreparedAttachments::prepare(
-                        &crate::attachments::AttachmentStore::default(),
-                        &source,
-                        &root,
-                    )
-                })
-                .await
-                .map_err(|e| e.to_string())??;
-                attachments
-                    .scope(self.provider.execute(&prompt, &mut |event| {
-                        // A provider must not publish an early terminal before process exit is checked.
-                        if !event.is_terminal() {
-                            events(event);
-                        }
-                    }))
+            let result = self
+                .environment
+                .scope(async {
+                    let source = prompt.to_owned();
+                    let root = self.attachment_root.clone();
+                    let (prompt, attachments) = tokio::task::spawn_blocking(move || {
+                        crate::attachments::PreparedAttachments::prepare(
+                            &crate::attachments::AttachmentStore::default(),
+                            &source,
+                            &root,
+                        )
+                    })
                     .await
-            }
-            .await;
+                    .map_err(|e| e.to_string())??;
+                    attachments
+                        .scope(self.provider.execute(&prompt, &mut |event| {
+                            // A provider must not publish an early terminal before process exit is checked.
+                            if !event.is_terminal() {
+                                events(event);
+                            }
+                        }))
+                        .await
+                })
+                .await;
             events(match &result {
                 Ok(text) => RuntimeEvent::Completed { text: text.clone() },
                 Err(message) => RuntimeEvent::Failed {

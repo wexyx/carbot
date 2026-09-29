@@ -608,7 +608,7 @@ pub(crate) async fn begin_group(state: &AppState, input: RunRequest) -> Result<V
         )
         .await?;
     let prior = serde_json::to_string(
-        &super::context_reset::after_reset(&rows)
+        &super::recent_context::select(&rows, super::recent_context::limit())
             .iter()
             .map(|r| &r["payload"])
             .collect::<Vec<_>>(),
@@ -616,7 +616,8 @@ pub(crate) async fn begin_group(state: &AppState, input: RunRequest) -> Result<V
     .map_err(|e| e.to_string())?;
 
     let execution_prompt = format!(
-        "\nPrevious topic records:\n{prior}\nLatest user request:\n{}",
+        "{}\nPrevious topic records:\n{prior}\nLatest user request:\n{}",
+        super::recent_context::NOTICE,
         input.content
     );
     // Freeze every remote member before starting any worker; edits after this point affect later runs.

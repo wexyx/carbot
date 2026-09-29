@@ -9,11 +9,13 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub(crate) struct Runtime {
     config: ClaudeConfig,
+    launch: super::super::launch_command::LaunchCommand,
 }
 
 impl Runtime {
     pub(crate) fn new(config: ClaudeConfig) -> Result<Self, String> {
-        Ok(Self { config })
+        let launch = config.launch()?;
+        Ok(Self { config, launch })
     }
 }
 
@@ -30,7 +32,9 @@ impl crate::providers::Provider for Runtime {
             let process = crate::execution::native::NativeCommand::new(&self.config.workdir)?;
             let credential = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
                 .join(".claude/.credentials.json");
-            if std::env::var_os("ANTHROPIC_API_KEY").is_none() {
+            if crate::environment::AgentEnvironment::lookup("ANTHROPIC_API_KEY").is_none()
+                && crate::environment::AgentEnvironment::lookup("CLAUDE_CODE_OAUTH_TOKEN").is_none()
+            {
                 process
                     .import_credential(
                         &self.config.workdir,
@@ -39,13 +43,14 @@ impl crate::providers::Provider for Runtime {
                     )
                     .await?;
             }
-            let mut command = process.command(&self.config.binary, &self.config.workdir)?;
+            let mut command = process.command(self.launch.binary(), &self.config.workdir)?;
+            command.args(self.launch.arguments());
             for key in [
                 "ANTHROPIC_API_KEY",
                 "ANTHROPIC_BASE_URL",
                 "CLAUDE_CODE_OAUTH_TOKEN",
             ] {
-                if let Some(value) = std::env::var_os(key) {
+                if let Some(value) = crate::environment::AgentEnvironment::lookup(key) {
                     command.env(key, value);
                 }
             }

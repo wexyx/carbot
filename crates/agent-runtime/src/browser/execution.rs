@@ -17,8 +17,18 @@ impl BrowserExecution {
         {
             return Err("browser URL must be HTTP(S), without embedded credentials".into());
         }
-        let runtime = Self::runtime()?;
         crate::workspace::confirm_browser(root, url.as_str()).await?;
+        let runtime = super::runtime::BrowserRuntime::new(crate::paths::data_dir())
+            .ensure(root)
+            .await?;
+        Self::execute(root, url.as_str(), screenshot, runtime).await
+    }
+    pub(super) async fn execute(
+        root: &Path,
+        url: &str,
+        screenshot: bool,
+        runtime: PathBuf,
+    ) -> Result<Value, String> {
         let temporary = crate::workspace::temporary_dir(root)?;
         let profile = tempfile::Builder::new()
             .prefix("carbot-browser-")
@@ -45,10 +55,13 @@ impl BrowserExecution {
             .env("TMPDIR", profile.path())
             .env("MAC_CHROMIUM_TMPDIR", profile.path())
             .env("CFFIXED_USER_HOME", profile.path())
-            .env("LANG", "en_US.UTF-8")
+            .env(
+                "LANG",
+                std::env::var_os("LANG").unwrap_or_else(|| "en_US.UTF-8".into()),
+            )
             .args(["--input-type=module", "-e", include_str!("bridge.mjs")])
             .arg(
-                json!({"runtime":runtime,"profile":profile.path(),"url":url.as_str(),"screenshot":target})
+                json!({"runtime":runtime,"profile":profile.path(),"url":url,"screenshot":target})
                     .to_string(),
             )
             .stdin(Stdio::null())
@@ -57,6 +70,7 @@ impl BrowserExecution {
             .kill_on_drop(true);
         #[cfg(unix)]
         command.process_group(0);
+        crate::environment::AgentEnvironment::apply(&mut command);
         let mut child = command
             .spawn()
             .map_err(|e| format!("browser requires Node.js: {e}"))?;
@@ -84,29 +98,6 @@ impl BrowserExecution {
             let _ = output.keep();
         }
         Ok(result)
-    }
-    fn runtime() -> Result<PathBuf, String> {
-        let mut roots = vec![];
-        if let Some(root) = std::env::var_os("CARBOT_SYSTEM_SKILLS_DIR") {
-            roots.push(PathBuf::from(root));
-        } else {
-            if let Ok(exe) = std::env::current_exe() {
-                if let Some(root) = exe.parent().and_then(Path::parent) {
-                    roots.push(root.join("skills/system"));
-                }
-            }
-            roots.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../skills/system"));
-        }
-        roots
-            .into_iter()
-            .map(|root| root.join("business/browser-automation/.runtime"))
-            .find(|path| path.join("node_modules/puppeteer/package.json").is_file())
-            .ok_or_else(|| {
-                "Puppeteer 未安装：请在 browser-automation Skill 目录运行 node install.mjs"
-                    .to_owned()
-            })?
-            .canonicalize()
-            .map_err(|e| e.to_string())
     }
 }
 async fn read(reader: impl tokio::io::AsyncRead + Unpin) -> Result<String, String> {

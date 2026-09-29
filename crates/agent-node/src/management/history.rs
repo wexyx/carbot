@@ -8,9 +8,10 @@ pub(super) fn context(events: &Value) -> String {
             messages.push(json!({"role":"assistant","content":std::mem::take(text)}));
         }
     }
-    for event in
-        crate::core::context_reset::after_reset(events.as_array().map(Vec::as_slice).unwrap_or(&[]))
-    {
+    for event in crate::core::recent_context::select(
+        events.as_array().map(Vec::as_slice).unwrap_or(&[]),
+        crate::core::recent_context::limit(),
+    ) {
         match event["type"].as_str().unwrap_or_default() {
             "text_delta" => text.push_str(event["text"].as_str().unwrap_or_default()),
             "completed" => {

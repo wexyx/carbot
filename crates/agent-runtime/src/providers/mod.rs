@@ -2,6 +2,7 @@
 pub(crate) mod carbot;
 pub(crate) mod claude;
 pub(crate) mod codex;
+mod launch_command;
 pub(crate) mod mock;
 mod process;
 

@@ -5,11 +5,13 @@ description: Use Puppeteer and an isolated headless browser for web automation a
 
 # Browser automation
 
-Default to Node.js + Puppeteer, not the user's Chrome profile. Read `install.mjs` and `browser.mjs` using `skill_file`. If the installed Skill directory is accessible, run them there; otherwise copy these two resources into a dedicated directory in the approved workspace. Use `browser_run` for page reading and screenshots. Use `command_run` only for approved dependency installation or richer workspace scripts. Carbot executes these on the host; operation approvals still apply.
+Default to Node.js + Puppeteer, not the user's Chrome profile. Use `browser_run` for page reading and screenshots; it checks and, when authorized, builds missing dependencies automatically. Do not work around a missing runtime by installing into a release or an arbitrary home directory. For richer scripts, read `runtime.mjs`, `install.mjs` and `browser.mjs` using `skill_file`. Run them from the installed Skill directory, or copy all three together into the approved workspace. Carbot executes these on the host; operation approvals still apply.
 
 ## Install once
 
-Run `node install.mjs` after the user approves installing dependencies. Node.js and npm must already be available; ask before installing them if missing. The installer pins Puppeteer and downloads only its matching Chrome Headless Shell into this Skill's hidden `.runtime` directory. It does not use or modify personal Chrome profiles. Do not install on every request.
+All entry points share `<CARBOT_DATA_DIR>/runtime/browser-automation/.runtime/`, normally `~/.carbot/runtime/browser-automation/.runtime/` or `~/.carbot_<instance>/runtime/browser-automation/.runtime/`. Carbot explicitly passes the instance directory to commands even when HOME is temporary. Skill source files remain in the release directory. Never derive dependencies from the script's location or override CARBOT_DATA_DIR to bypass approval.
+
+Dependencies are reused across requests, restarts and release upgrades. If Puppeteer or its matching Chrome Headless Shell is missing, the runtime builds it again. Native `browser_run` asks for installation approval unless current permissions already allow it. `node install.mjs` and `withBrowser` also build missing dependencies: obtain approval for that installation when executing scripts through `command_run`. Node.js and npm must already be available; ask before installing them if missing. The installer pins Puppeteer and downloads only its matching Chrome Headless Shell, without using personal Chrome profiles.
 
 ## Read a page or capture a screenshot
 

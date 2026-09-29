@@ -2,6 +2,8 @@
 import {ref,computed,watch,onMounted,onBeforeUnmount} from 'vue'
 import ConfigPanel from './ConfigPanel.vue'
 import GroupConfiguration from './GroupConfiguration.vue'
+import {ElMessage} from 'element-plus/es/components/message/index'
+import 'element-plus/es/components/message/style/css'
 import AdminConfiguration from './AdminConfiguration.vue'
 import RuntimeConfigurationFields from './RuntimeConfigurationFields.vue'
 import AgentTestChat from './AgentTestChat.vue'
@@ -29,9 +31,9 @@ const send=(body,method='POST')=>({method,headers:{'content-type':'application/j
 async function load(){if(loading)return;loading=true;try{const result=await props.request(base()+'/agents/candidates');if(alive)data.value=result}finally{loading=false}}
 async function perform(fn){if(busy.value)return;busy.value=true;error.value='';notice.value='';try{await fn();emit('changed');load().catch(e=>{if(alive)error.value=e.message})}catch(e){error.value=e.message}finally{busy.value=false}}
 function reset(){creationKind.value='local';draft.value=null;virtual.value=null;testing.value=false;deleting.value=false;error.value='';notice.value='';if(!props.selectedAgent)edit(null)}
-function edit(a){if(a?.kind==='remote')return;draft.value=a?{client_id:a.id,role:a.role,provider:a.provider,expected_version:a.version}:{client_id:'',role:'',provider:'carbot',expected_version:0};draft.value.response_instructions=a?.response_instructions??'结论先行，只回答最重要的信息；默认简洁，除非用户要求展开。群聊中不要复述其他成员已说过的内容。';draft.value.configuration={MODEL_PROVIDER:'openai',MODEL_NAME:'',MODEL_API:'',MODEL_BASE_URL:'',CODEX_BIN:'',CLAUDE_BIN:'',...a?.configuration?.values};useInstance.value=a?.configuration?.inherits_instance??true;modelKey.value='';clearModelKey.value=false}
+function edit(a){if(a?.kind==='remote')return;draft.value=a?{client_id:a.id,role:a.role,provider:a.provider,expected_version:a.version}:{client_id:'',role:'',provider:'carbot',expected_version:0};draft.value.response_instructions=a?.response_instructions??'结论先行，只回答最重要的信息；默认简洁，除非用户要求展开。群聊中不要复述其他成员已说过的内容。';draft.value.configuration={MODEL_PROVIDER:'openai',MODEL_NAME:'',MODEL_API:'',MODEL_BASE_URL:'',CODEX_BIN:'',CLAUDE_BIN:'',AGENT_ENV_JSON:'{}',...a?.configuration?.values};useInstance.value=a?.configuration?.inherits_instance??true;modelKey.value='';clearModelKey.value=false}
 function editVirtual(a){virtual.value=a?{key:a.id,version:a.version,body:{name:a.name,role:a.role,response_instructions:a.response_instructions,policy:a.policy}}:{key:'',version:0,body:{name:'',policy:{mode:'relay',relay_strategy:'manual',members:[],leader:null,rounds:1,instructions:''}}}}
-async function save(test=false){await perform(async()=>{const id=draft.value.client_id;await props.request(base()+'/agents',send({...draft.value,configuration:agent.value?.is_default?undefined:useInstance.value?null:{...draft.value.configuration,...(clearModelKey.value?{MODEL_API_KEY:''}:modelKey.value?{MODEL_API_KEY:modelKey.value}:{})}},'PUT'));draft.value=null;emit('select',id);notice.value='已保存。';if(test===true){await load();testing.value=true}})}
+async function save(test=false){await perform(async()=>{const id=draft.value.client_id;await props.request(base()+'/agents',send({...draft.value,configuration:agent.value?.is_default?undefined:useInstance.value?null:{...draft.value.configuration,...(clearModelKey.value?{MODEL_API_KEY:''}:modelKey.value?{MODEL_API_KEY:modelKey.value}:{})}},'PUT'));draft.value=null;emit('select',id);ElMessage.success({message:'Agent 已保存。',duration:2500,grouping:true});if(test===true){await load();testing.value=true}})}
 async function start(){await perform(async()=>{await props.request(base()+'/agents/'+encodeURIComponent(agent.value.id)+'/start',send({}))})}
 async function stop(){await perform(async()=>{pending.value=await props.request(base()+'/agents/'+encodeURIComponent(agent.value.id)+'/stop',send({}))})}
 async function remove(){await perform(async()=>{await props.request(base()+'/agents/'+encodeURIComponent(agent.value.id),send({expected_version:agent.value.version},'DELETE'));deleting.value=false;emit('close')})}
@@ -57,7 +59,7 @@ onBeforeUnmount(()=>{alive=false;clearInterval(timer)})
   <el-alert type="warning" :closable="false" show-icon v-if="pending" class="approval"><h4>需要确认</h4><p>{{pending.warning||'停用后不再接收新任务，已开始的任务继续执行。'}}</p><p>{{pending.input?.url}}</p><el-button type="primary" native-type="button" :disabled="busy" @click="decide(true)">确认执行</el-button><el-button type="default" native-type="button" class="secondary" :disabled="busy" @click="decide(false)">拒绝</el-button></el-alert>
  </div>
 </ConfigPanel>
-<el-drawer v-model="editingOpen" :before-close="closeEditor" direction="rtl" size="min(680px, 100vw)" :title="agent?.is_default?'编辑角色':selectedAgent?'编辑 Agent':'新建 Agent'" append-to-body destroy-on-close>
+<el-drawer v-model="editingOpen" :before-close="closeEditor" direction="rtl" size="min(900px, 100vw)" :title="agent?.is_default?'编辑角色':selectedAgent?'编辑 Agent':'新建 Agent'" append-to-body destroy-on-close>
  <el-alert v-if="error" type="error" :closable="false" :title="error"/>
   <label v-if="!selectedAgent" class="field-stack">Agent 类型<el-radio-group v-model="creationKind" @change="chooseCreation"><el-radio-button value="local">本地 Agent</el-radio-button><el-radio-button value="virtual">虚拟 Agent</el-radio-button></el-radio-group></label>
   <GroupConfiguration v-if="virtual&&!selectedAgent" :group="virtual" :project="project" :request="request" creating virtual-agent inline @close="virtual=null" @saved="row=>{virtual=null;perform(load);$emit('select',row.key)}"/>

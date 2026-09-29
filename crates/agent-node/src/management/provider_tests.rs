@@ -27,12 +27,14 @@ async fn cli_admin_providers_call_scoped_tools_from_isolated_workspaces() {
         std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
         let config = if provider == "codex" {
             RuntimeConfig::Codex(CodexConfig {
+                environment: Default::default(),
                 binary,
                 sandbox: "danger-full-access".into(),
                 workdir: dir.path().into(),
             })
         } else {
             RuntimeConfig::Claude(ClaudeConfig {
+                environment: Default::default(),
                 binary,
                 permission_mode: "bypassPermissions".into(),
                 workdir: dir.path().into(),

@@ -16,21 +16,16 @@ CLI 使用 `/attach /path/to/file`，随后发送分析问题；`/detach` 清空
 
 附件只属于当前 Carbot 实例。本次未增加跨 Carbot 的附件自动转发；组网中的远端 Agent 无法解析另一实例的本地附件 ID。远端 Web 可沿用 SSH 端口转发访问，不改变原来的本机管理访问限制。
 
-## 智能压缩
+## 按需上下文
 
-在 Carbot 运行器的 Agent 配置中，将“压缩策略”选为“智能压缩”，或者配置 `CONTEXT_STRATEGY=intelligent`。现有首尾摘录、近期窗口和禁用选项保留，不自动修改已有 Agent 的选择。Codex/Claude CLI 自身的压缩仍由各自运行器负责。
+默认只自动带入最近 8 轮对话，不把全部历史与原始工具过程反复送入模型。管理和项目会话共用 `history_read`，工具始终限定在当前会话：
 
-接近配置的上下文长度时，Carbot 使用当前模型生成结构化摘要，记录目标、约束、决策、完成事项、待办、风险和引用，保留能放入窗口的近期完整对话块以及当前请求。较大的旧内容分块合并摘要；这会产生额外模型请求和费用。摘要失败、格式错误或长度不合适时，不会用无效摘要覆盖当前上下文。
+- `{"action":"read"}`：列出日志文件和行数。
+- `{"action":"read","file":"hour-000000000001.jsonl","from_line":120,"to_line":180}`：按真实文件名、1 起始的闭区间读取；单次最多 200 行。
+- `{"action":"compact","strategy":"summary","summary":"已确定…；已完成…；尚待…；证据位于文件…第…行"}`：Agent 自行决定摘要内容。
+- `{"action":"compact","strategy":"recent"}`：不生成摘要，仅保留任务和最新完整工具轮次。
 
-摘要是有损的，不保证每个细节都保留。原始 JSONL 不改写，摘要检查点也写入日志；模型可以调用 `history_read` 回查当前会话。此工具不允许指定其他项目、会话或任意磁盘路径。
-
-先传 `{}` 获取日志文件列表和行数，再按需查询：
-
-```json
-{"file":"hour-000000500000.jsonl","from_line":120,"to_line":180}
-```
-
-行号从 1 开始、两端包含，一次最多 200 行；结果体有大小限制，超大单行会标明截断和字节位置。`block` 是压缩时的逻辑对话块，不与物理文件行号混用。
+压缩在当前工具轮次结束后生效，不修改原始日志，不删当前任务或系统规则。Agent 配置里的压缩策略已移除；宿主保留超限保护。该工具适用于 Carbot，以及通过工具桥接接入的 Claude/Codex，不会声称修改外部 CLI 的内部模型缓存。
 
 读取使用每 128 行一个字节偏移索引，加上“文件 → 行号 → 内容”缓存。每个文件内容缓存最多 512 KiB / 512 行，最多保留 16 个文件的索引及缓存；追加保留旧行，截断、替换或检测到同长度改写时失效。缓存只是加速层，进程重启后重新建立，不维护超大聊天 JSON。
 
@@ -43,7 +38,7 @@ GET /v1/repl/{namespace}/chats/{group-or-admin}/logs/files/{file}?from_line=120&
 工具执行进度在 Web 和 CLI 中使用单行状态；Web 点击展开详情，CLI 使用 `/tools [序号]`。权限确认仍单独展示，不会被轮播隐藏。
 # 浏览器与执行时长
 
-内置 `browser-automation` Skill 默认使用 Puppeteer；在 Skill 目录运行 `node install.mjs`，依赖和匹配的 Chrome Headless Shell 安装到其 `.runtime`。此目录不随 release 打包，目标机器首次使用需要安装 Node.js/npm 并执行安装脚本。浏览器使用临时独立配置，不复用个人 Chrome 数据。
+内置 `browser-automation` Skill 默认使用 Puppeteer；在 Skill 目录运行 `node install.mjs`，依赖和匹配的 Chrome Headless Shell 安装到 `<实例数据目录>/runtime/browser-automation/.runtime/`。该目录跨版本复用；原生工具与 Skill 共用它，缺失时按执行授权自动构建。目标机器需安装 Node.js/npm。浏览器使用临时独立配置，不复用个人 Chrome 数据。
 
 浏览器通过 `browser_run` 读取网页和截图，使用固定 Puppeteer 桥接脚本。Carbot 不再套外层系统沙箱，Chromium 自身沙箱仍保留。普通命令、Python 和 Skill 同样直接在本机执行，仍受操作确认和启用策略控制。
 

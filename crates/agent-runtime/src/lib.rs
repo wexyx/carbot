@@ -3,6 +3,7 @@ pub mod attachments;
 mod browser;
 pub mod config;
 pub mod context;
+pub mod environment;
 mod errors;
 mod events;
 pub mod execution;

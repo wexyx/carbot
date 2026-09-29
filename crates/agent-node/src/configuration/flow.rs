@@ -47,7 +47,7 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn retries_invalid_provider_then_configures_cli_without_model_key() {
-        let mut lines = tokio::io::BufReader::new(&b"wrong\ncodex\n/test/codex\n"[..]).lines();
+        let mut lines = tokio::io::BufReader::new(&b"wrong\ncodex\n/test/codex\n\n"[..]).lines();
         let cfg = edit(Settings::default(), &mut lines).await.unwrap();
         assert!(matches!(cfg.runtime().unwrap(), RuntimeConfig::Codex(_)));
         assert_eq!(cfg.get("CODEX_BIN"), "/test/codex");
