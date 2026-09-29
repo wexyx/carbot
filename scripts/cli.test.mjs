@@ -25,10 +25,10 @@ test('retired deployment and management commands are rejected',async()=>fixture(
   for(const args of [['docker-start'],['start','--docker'],['peer-setup'],['setup'],['runtime-setup']])assert.equal(run(args).status,2)
   const proxy=run(['proxy']);assert.equal(proxy.status,0,proxy.stderr);assert.match(proxy.stdout,/NATIVE.*proxy/)
 }))
-test('configuration is literal data and environment overrides saved settings',async()=>fixture(async({dir,run})=>{
+test('launcher leaves dotenv parsing to Rust and preserves explicit environment',async()=>fixture(async({dir,run})=>{
   await writeFile(join(dir,'.env'),'DATABASE_URL=retired\nBIND_ADDR=127.0.0.1:1111\n')
   await writeFile(join(dir,'.carbot.env'),'BIND_ADDR=127.0.0.1:2222\n')
-  assert.match(run().stdout,/127\.0\.0\.1:2222/)
+  assert.doesNotMatch(run().stdout,/127\.0\.0\.1:2222/)
   assert.match(run([],{BIND_ADDR:'127.0.0.1:3333'}).stdout,/127\.0\.0\.1:3333/)
   assert.equal(run(['--outside-access','bad']).status,2)
 }))

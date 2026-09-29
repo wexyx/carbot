@@ -42,6 +42,7 @@ directory = tempfile.mkdtemp(prefix="carbot-tty-permission-")
 server = http.server.HTTPServer(("127.0.0.1", 0), Model)
 pid, master = pty.fork()
 if pid == 0:
+    os.chdir(directory)
     os.execve(str(root / "target/debug/agent-node"), ["agent-node", "--cli"], {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TERM": "xterm-256color",
         "ADMIN_AGENT_PROVIDER": "carbot", "CARBOT_DATA_DIR": directory, "AGENT_WORKDIR": directory,

@@ -77,6 +77,21 @@ impl StartupEnvironment {
                 std::env::set_var(key, value);
             }
         }
+        for (key, bundled) in [
+            ("WEB_CONFIG_DIR", "CARBOT_BUNDLED_WEB_DIR"),
+            (
+                "CARBOT_SYSTEM_SKILLS_DIR",
+                "CARBOT_BUNDLED_SYSTEM_SKILLS_DIR",
+            ),
+        ] {
+            if std::env::var_os(key).is_none() {
+                if let Some(value) = std::env::var_os(bundled) {
+                    unsafe {
+                        std::env::set_var(key, value);
+                    }
+                }
+            }
+        }
         unsafe {
             std::env::set_var("CARBOT_DATA_DIR", data_dir);
             std::env::set_var("CARBOT_CONFIG_DEFAULT_KEYS", defaults);

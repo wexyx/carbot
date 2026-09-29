@@ -16,6 +16,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 directory = tempfile.mkdtemp(prefix="carbot-terminal-")
 pid, master = pty.fork()
 if pid == 0:
+    os.chdir(directory)
     os.execve(str(root / "target/debug/agent-node"), ["agent-node", "--cli"], {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TERM": "xterm-256color",
         "ADMIN_AGENT_PROVIDER": "mock", "CARBOT_DATA_DIR": directory,

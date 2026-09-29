@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,mkdir,rm,realpath} from 'node:fs/promises'
+import {mkdtemp,mkdir,rm,realpath,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {spawn} from 'node:child_process'
@@ -40,6 +40,25 @@ test('startup paths use home, preserve overrides and lock the shared instance',{
       assert.equal(config.workdir,root)
       await stop(server);server=null
     }
+    // Instance defaults, launch-directory override, explicit environment and CLI priority.
+    await writeFile(join(home,'.carbot','.agent.env'), 'AGENT_WORKDIR='+work+'\n')
+    server=await launch()
+    assert.equal((await fetch(server.url+'/v1/workspace').then(r=>r.json())).workdir,work)
+    await stop(server)
+    await writeFile(join(cwd,'.agent.env'),'AGENT_WORKDIR='+home+'\n')
+    server=await launch()
+    assert.equal((await fetch(server.url+'/v1/workspace').then(r=>r.json())).workdir,home)
+    await stop(server)
+    server=await launch([], {AGENT_WORKDIR:work})
+    assert.equal((await fetch(server.url+'/v1/workspace').then(r=>r.json())).workdir,work)
+    await stop(server)
+    server=await launch(['--workdir',home], {AGENT_WORKDIR:work})
+    assert.equal((await fetch(server.url+'/v1/workspace').then(r=>r.json())).workdir,home)
+    await stop(server)
+    await writeFile(join(home,'.carbot_dev','.agent.env'),'AGENT_WORKDIR='+work+'\n')
+    server=await launch(['--name','dev'],{},work)
+    assert.equal((await fetch(server.url+'/v1/workspace').then(r=>r.json())).workdir,work)
+    await stop(server)
     server=await launch()
     await assert.rejects(launch([],{},work),/already|lock|running|in use/i)
   }finally{await stop(server);await rm(temp,{recursive:true,force:true})}

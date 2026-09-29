@@ -10,7 +10,7 @@ import {modelFixture,pause} from './admin-fixture.mjs'
 test('CLI aliases isolate data, reject duplicate process, and allocate separate Web ports',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'carbot-instances-')),model=await modelFixture(),children=[]
  function launch(name,extra={}){
-   const child=spawn(resolve('target/debug/agent-node'),['--cli','--workdir',dir,'--name',name,'--web-port','0'],{env:{HOME:dir,PATH:process.env.PATH,...model.env,...extra},stdio:['pipe','pipe','pipe']})
+   const child=spawn(resolve('target/debug/agent-node'),['--cli','--workdir',dir,'--name',name,'--web-port','0'],{cwd:dir,env:{HOME:dir,PATH:process.env.PATH,...model.env,...extra},stdio:['pipe','pipe','pipe']})
    const item={child,output:'',name};children.push(item)
    child.stdout.on('data',b=>item.output+=b);child.stderr.on('data',b=>item.output+=b);return item
  }

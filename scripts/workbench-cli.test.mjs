@@ -9,7 +9,7 @@ import {pause,request,policy} from './admin-fixture.mjs'
 
 test('CLI and Web share Agent/project/capability state; CLI works with Server stopped',{timeout:30000},async()=>{
  const dir=await mkdtemp(join(tmpdir(),'carbot-workbench-cli-'))
- const child=spawn(resolve('target/debug/agent-node'),['--cli','--data-dir',dir,'--server-port','0'],{env:{PATH:process.env.PATH,ADMIN_AGENT_PROVIDER:'mock',NODE_LINKS_JSON:'[]'},stdio:['pipe','pipe','pipe']})
+ const child=spawn(resolve('target/debug/agent-node'),['--cli','--data-dir',dir,'--server-port','0'],{cwd:dir,env:{PATH:process.env.PATH,ADMIN_AGENT_PROVIDER:'mock',NODE_LINKS_JSON:'[]'},stdio:['pipe','pipe','pipe']})
  let output=''
  child.stdout.on('data',v=>output+=v);child.stderr.on('data',v=>output+=v)
  async function wait(predicate){for(let i=0;i<250;i++){if(predicate())return;if(child.exitCode!==null)throw Error(output);await pause(20)}throw Error(output)}

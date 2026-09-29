@@ -43,9 +43,9 @@ done
 # Let Rust resolve home-based defaults; only normalize explicitly configured paths.
 if [[ -n ${AGENT_WORKDIR:-} && $AGENT_WORKDIR != /* ]]; then export AGENT_WORKDIR="$invocation_dir/$AGENT_WORKDIR"; fi
 if [[ -n ${CARBOT_DATA_DIR:-} && $CARBOT_DATA_DIR != /* ]]; then export CARBOT_DATA_DIR="$invocation_dir/$CARBOT_DATA_DIR"; fi
-export CARBOT_SYSTEM_SKILLS_DIR=${CARBOT_SYSTEM_SKILLS_DIR:-$source_dir/skills/system}
-export WEB_CONFIG_DIR=${WEB_CONFIG_DIR:-$source_dir/apps/web/dist}
-if [[ $interactive == false && ! -f $WEB_CONFIG_DIR/index.html ]]; then
+export CARBOT_BUNDLED_SYSTEM_SKILLS_DIR="$source_dir/skills/system"
+export CARBOT_BUNDLED_WEB_DIR="$source_dir/apps/web/dist"
+if [[ $interactive == false && ! -f ${WEB_CONFIG_DIR:-$CARBOT_BUNDLED_WEB_DIR}/index.html ]]; then
   command -v pnpm >/dev/null || { printf '请先 pnpm install && pnpm web:build，或指定 WEB_CONFIG_DIR。\n' >&2; exit 1; }
   pnpm web:build
 fi

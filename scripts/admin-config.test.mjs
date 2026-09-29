@@ -47,7 +47,7 @@ test('human configuration requires authentication, masks secrets and survives re
 test('noninteractive invalid startup fails clearly without waiting for stdin',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'carbot-admin-missing-'))
   try{
-    const result=spawnSync(resolve('target/debug/agent-node'),['--cli'],{env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,MODEL_PROVIDER:'invalid'},encoding:'utf8',timeout:5000})
+    const result=spawnSync(resolve('target/debug/agent-node'),['--cli'],{cwd:dir,env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,MODEL_PROVIDER:'invalid'},encoding:'utf8',timeout:5000})
     assert.equal(result.status,2)
     assert.match(result.stderr,/请在终端运行 carbot 完成配置/)
     assert.doesNotMatch(result.stderr,/AdminAgent/)
@@ -58,7 +58,7 @@ test('noninteractive invalid startup fails clearly without waiting for stdin',as
 test('CLI can reconfigure after startup without sending settings to the model',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'carbot-admin-repl-'))
   try{
-    const result=spawnSync(resolve('target/debug/agent-node'),['--cli'],{env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,ADMIN_AGENT_PROVIDER:'mock'},input:'/admin-config\ncodex\n/usr/bin/false\n/exit\n',encoding:'utf8',timeout:10000})
+    const result=spawnSync(resolve('target/debug/agent-node'),['--cli'],{cwd:dir,env:{PATH:process.env.PATH,CARBOT_DATA_DIR:dir,ADMIN_AGENT_PROVIDER:'mock'},input:'/admin-config\ncodex\n/usr/bin/false\n/exit\n',encoding:'utf8',timeout:10000})
     assert.equal(result.status,0,result.stderr)
     assert.match(result.stdout,/配置已保存并生效/)
     const saved=JSON.parse(await readFile(join(dir,'default-agent.json'),'utf8'))
