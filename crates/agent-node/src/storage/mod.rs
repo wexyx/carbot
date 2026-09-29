@@ -17,3 +17,5 @@ mod log_line_index;
 #[cfg(test)]
 mod log_line_tests;
 mod log_tail;
+
+mod log_writer;

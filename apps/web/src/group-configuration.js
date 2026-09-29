@@ -11,7 +11,7 @@ export function validateGroupConfiguration(draft){
  if(!['manual','random','negotiated'].includes(p.relay_strategy||'manual'))return '接力策略无效。'
  if(!modes.some(m=>m.id===p.mode))return '请选择有效的交流模式。'
  if(p.members.length<1||p.members.length>8)return '群成员需要 1–8 个 Agent。'
- if(!Number.isInteger(p.rounds)||p.rounds<1||p.rounds>6)return '交流轮次需要是 1–6 的整数。'
+ if(!Number.isInteger(p.rounds)||p.rounds<1||p.rounds>60)return '交流轮次需要是 1–60 的整数。'
  if(new TextEncoder().encode(p.instructions).length>8192)return '协作要求不能超过 8192 字节。'
  for(let i=0;i<p.members.length;i++){
   const member=p.members[i]

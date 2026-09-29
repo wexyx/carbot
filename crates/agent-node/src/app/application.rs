@@ -69,4 +69,7 @@ pub(crate) async fn serve(
     manager.stop().await;
     web.stop().await;
     agent_runtime::execution::shutdown().await;
+    if let Err(error) = manager.core().state().store.logs().flush().await {
+        eprintln!("history flush failed during shutdown: {error}");
+    }
 }

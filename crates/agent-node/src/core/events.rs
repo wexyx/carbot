@@ -11,7 +11,13 @@ pub(crate) async fn persist_event(
         let session_run=state.store.get("runs",&event.session_id.to_string()).await;
         let group=run.as_ref().or(session_run.as_ref()).and_then(|r|r["group_id"].as_str());
         let chat=group.map(|g|format!("group:{g}")).unwrap_or_else(||channel.to_string());
-        state.store.logs().append(project_id,chat,vec![json!({"id":event.id,"project_id":project_id,"channel":channel,"type":event.kind,"payload":event,"created_at":storage::now().to_string()})]).await?;
+        let rows = vec![json!({"id":event.id,"project_id":project_id,"channel":channel,"type":event.kind,"payload":event,"created_at":storage::now().to_string()})];
+        if event.kind.starts_with("agent.") && !matches!(event.kind.as_str(), "agent.done" | "agent.error") {
+            state.store.logs().enqueue(project_id, chat, rows)?;
+        } else {
+            // User input and terminal events are durability boundaries, not token-path writes.
+            state.store.logs().append(project_id, chat, rows).await?;
+        }
         if matches!(event.kind.as_str(),"agent.done"|"agent.error"){
             state.store.transaction(|data|{conversation::record(data,event);Ok(())}).await?;
         }

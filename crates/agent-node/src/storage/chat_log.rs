@@ -5,12 +5,13 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 use uuid::Uuid;
 #[derive(Clone)]
-pub(crate) struct ChatLog(Arc<Inner>);
-struct Inner {
+pub(crate) struct ChatLog(pub(super) Arc<Inner>);
+pub(super) struct Inner {
+    writer: OnceLock<super::log_writer::LogWriter>,
     root: PathBuf,
     cursors: Mutex<HashMap<PathBuf, u64>>,
     line_indexes: Mutex<HashMap<PathBuf, super::log_line_index::LineIndex>>,
@@ -19,6 +20,7 @@ struct Inner {
 impl ChatLog {
     pub(crate) fn open(root: PathBuf) -> Self {
         Self(Arc::new(Inner {
+            writer: OnceLock::new(),
             root,
             cursors: Mutex::new(HashMap::new()),
             line_indexes: Mutex::new(HashMap::new()),
@@ -29,6 +31,7 @@ impl ChatLog {
     pub(crate) fn temporary() -> Self {
         let dir = tempfile::tempdir().unwrap();
         Self(Arc::new(Inner {
+            writer: OnceLock::new(),
             root: dir.path().into(),
             cursors: Mutex::new(HashMap::new()),
             line_indexes: Mutex::new(HashMap::new()),
@@ -49,12 +52,29 @@ impl ChatLog {
         chat: String,
         events: Vec<Value>,
     ) -> Result<Vec<Value>, String> {
-        let log = self.clone();
-        tokio::task::spawn_blocking(move || log.append_sync(project, &chat, events))
-            .await
-            .map_err(|e| e.to_string())?
+        self.writer().append(project, chat, events).await
     }
-    fn append_sync(
+    fn writer(&self) -> &super::log_writer::LogWriter {
+        self.0
+            .writer
+            .get_or_init(|| super::log_writer::LogWriter::new(Arc::downgrade(&self.0)))
+    }
+    pub(crate) fn enqueue(
+        &self,
+        project: Uuid,
+        chat: String,
+        events: Vec<Value>,
+    ) -> Result<(), String> {
+        self.writer().enqueue(project, chat, events)
+    }
+    pub(crate) async fn flush(&self) -> Result<(), String> {
+        if let Some(writer) = self.0.writer.get() {
+            writer.flush().await
+        } else {
+            Ok(())
+        }
+    }
+    pub(super) fn append_sync(
         &self,
         project: Uuid,
         chat: &str,
@@ -96,6 +116,7 @@ impl ChatLog {
         }
         builder.create(&dir).map_err(|e| e.to_string())?;
         let path = dir.join(format!("hour-{:012}.jsonl", now / 3600));
+        let is_new_file = !path.exists();
         let mut options = OpenOptions::new();
         options.create(true).append(true);
         #[cfg(unix)]
@@ -112,9 +133,11 @@ impl ChatLog {
             return Err(format!("append chat log: {error}"));
         }
         cursors.insert(dir.clone(), seq);
-        File::open(&dir)
-            .and_then(|d| d.sync_all())
-            .map_err(|e| e.to_string())?;
+        if is_new_file {
+            File::open(&dir)
+                .and_then(|d| d.sync_all())
+                .map_err(|e| e.to_string())?;
+        }
         Ok(events)
     }
     pub(crate) async fn read(
@@ -125,6 +148,7 @@ impl ChatLog {
         before: u64,
         limit: usize,
     ) -> Result<Vec<Value>, String> {
+        self.flush().await?;
         let log = self.clone();
         tokio::task::spawn_blocking(move || {
             let mut guard = log.0.cursors.lock().map_err(|_| "chat log lock poisoned")?;
@@ -151,6 +175,7 @@ impl ChatLog {
         from: u64,
         to: u64,
     ) -> Result<Value, String> {
+        self.flush().await?;
         let log = self.clone();
         tokio::task::spawn_blocking(move || {
             let directory = log.directory(project, &chat);
@@ -183,12 +208,14 @@ impl ChatLog {
         name: String,
         offset: u64,
     ) -> Result<Value, String> {
+        self.flush().await?;
         let directory = self.directory(project, &chat);
         tokio::task::spawn_blocking(move || super::log_file_reader::read(&directory, &name, offset))
             .await
             .map_err(|e| e.to_string())?
     }
     pub(crate) async fn files(&self, project: Uuid, chat: String) -> Result<Vec<Value>, String> {
+        self.flush().await?;
         let log = self.clone();
         tokio::task::spawn_blocking(move || {
             files(&log.directory(project, &chat))?
@@ -268,6 +295,86 @@ fn scan(dir: &Path, after: u64, before: u64, limit: usize) -> Result<Vec<Value>,
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn streaming_queue_returns_while_disk_is_locked_and_reads_drain_in_order() {
+        let log = ChatLog::temporary();
+        let project = Uuid::new_v4();
+        // The producer can enqueue even when the file writer cannot acquire its lock.
+        {
+            let _disk = log.0.cursors.lock().unwrap();
+            for n in 0..50 {
+                log.enqueue(project, "stream".into(), vec![json!({"n":n})])
+                    .unwrap();
+            }
+        }
+        let terminal = log
+            .append(project, "stream".into(), vec![json!({"type":"done"})])
+            .await
+            .unwrap();
+        assert_eq!(terminal[0]["seq"], 51);
+        let rows = log
+            .read(project, "stream".into(), 0, u64::MAX, 100)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 51);
+        for (n, row) in rows[..50].iter().enumerate() {
+            assert_eq!(row["n"], n);
+            assert_eq!(row["seq"], n + 1);
+        }
+        log.enqueue(project, "stream".into(), vec![json!({"type":"after"})])
+            .unwrap();
+        // History readers include queued content, not only previously committed content.
+        assert_eq!(
+            log.read(project, "stream".into(), 0, u64::MAX, 1)
+                .await
+                .unwrap()[0]["seq"],
+            52
+        );
+    }
+    #[tokio::test]
+    async fn background_write_failure_is_reported_and_fences_later_writes() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let log = ChatLog::open(file.path().into());
+        let project = Uuid::new_v4();
+        log.enqueue(project, "stream".into(), vec![json!({"content":"test"})])
+            .unwrap();
+        assert!(log.flush().await.is_err());
+        assert!(
+            log.enqueue(project, "stream".into(), vec![json!({})])
+                .is_err()
+        );
+        assert!(
+            log.append(project, "stream".into(), vec![json!({})])
+                .await
+                .is_err()
+        );
+        assert!(
+            log.read(project, "stream".into(), 0, u64::MAX, 1)
+                .await
+                .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn streaming_queue_is_bounded_without_silently_dropping_events() {
+        let log = ChatLog::temporary();
+        let project = Uuid::new_v4();
+        // This current-thread test does not yield while filling the channel.
+        for n in 0..512 {
+            log.enqueue(project, "stream".into(), vec![json!({"n":n})])
+                .unwrap();
+        }
+        assert!(
+            log.enqueue(project, "stream".into(), vec![json!({})])
+                .is_err()
+        );
+        log.flush().await.unwrap();
+        assert_eq!(
+            log.read(project, "stream".into(), 0, u64::MAX, 1)
+                .await
+                .unwrap()[0]["seq"],
+            512
+        );
+    }
     #[tokio::test]
     async fn append_pages_isolation_restart() {
         let dir = tempfile::tempdir().unwrap();
