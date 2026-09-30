@@ -1,4 +1,8 @@
-use super::super::{config::HarnessConfig, prompt::SYSTEM, turn::Turn};
+use super::super::{
+    config::HarnessConfig,
+    prompt::SYSTEM,
+    turn::{Delta, Turn},
+};
 use super::contract::ModelProtocol;
 use crate::tools::{ToolDefinition, ToolRegistry};
 use serde_json::{Value, json};
@@ -24,11 +28,16 @@ impl ModelProtocol for AnthropicProtocol {
         &self,
         turn: &mut Turn,
         v: Value,
-        delta: &mut dyn FnMut(String),
+        delta: &mut dyn FnMut(Delta),
     ) -> Result<(), String> {
         if v["delta"]["type"] == "text_delta" {
             if let Some(text) = v["delta"]["text"].as_str() {
                 turn.append_text(text, delta);
+            }
+        }
+        if v["delta"]["type"] == "thinking_delta" {
+            if let Some(text) = v["delta"]["thinking"].as_str() {
+                turn.append_reasoning(text, delta);
             }
         }
         let i = v["index"].as_u64().unwrap_or(0) as usize;

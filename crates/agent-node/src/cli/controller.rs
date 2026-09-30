@@ -41,6 +41,9 @@ impl Controller {
             attachments: Vec::new(),
         })
     }
+    pub(super) fn group(&self) -> Option<String> {
+        self.group.clone()
+    }
     pub(super) fn view(&self) -> (Uuid, Uuid, Option<String>) {
         (
             self.project,
@@ -61,6 +64,29 @@ impl Controller {
         } else {
             "admin"
         }
+    }
+    /// Names this group can be addressed by, for `@` completion.
+    pub(super) async fn mentionable(&self) -> Vec<String> {
+        let Some(group) = self.group.as_deref() else {
+            return vec![];
+        };
+        self.manager
+            .core()
+            .state()
+            .policy_store
+            .get(self.project, "group", group)
+            .await
+            .ok()
+            .and_then(|doc| {
+                doc.body["policy"]["members"].as_array().map(|members| {
+                    members
+                        .iter()
+                        .filter_map(|m| m["path"].as_array()?.last()?.as_str())
+                        .map(str::to_owned)
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
     }
     pub(super) fn heading(&self) -> String {
         format!(

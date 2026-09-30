@@ -121,9 +121,10 @@ pub(super) async fn execute(
             .as_str()
             .unwrap_or(super::response_instructions::DEFAULT)
     );
+    let dispatch = super::policies::Dispatch::new(&tx, visited);
     let work = STACK.scope(
         stack,
-        Box::pin(engine(state, p, &policy, &prompt, None, tx, visited)),
+        Box::pin(engine(state, p, &policy, &prompt, &dispatch)),
     );
     tokio::pin!(work);
     loop {

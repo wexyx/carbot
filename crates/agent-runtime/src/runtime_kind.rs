@@ -5,6 +5,7 @@ pub enum RuntimeKind {
     Carbot,
     Claude,
     Codex,
+    OpenCode,
 }
 impl RuntimeKind {
     pub fn as_str(&self) -> &'static str {
@@ -13,6 +14,7 @@ impl RuntimeKind {
             Self::Carbot => "carbot",
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::OpenCode => "opencode",
         }
     }
 }
@@ -24,8 +26,9 @@ impl std::str::FromStr for RuntimeKind {
             "carbot" | "builtin" => Ok(Self::Carbot),
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
+            "opencode" => Ok(Self::OpenCode),
             other => Err(format!(
-                "Unknown AGENT_PROVIDER '{other}'; choose carbot, claude, codex, or mock"
+                "Unknown AGENT_PROVIDER '{other}'; choose carbot, claude, codex, opencode, or mock"
             )),
         }
     }

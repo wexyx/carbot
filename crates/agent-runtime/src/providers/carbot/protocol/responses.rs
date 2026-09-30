@@ -1,5 +1,9 @@
 use super::super::model_error::model_error;
-use super::super::{config::HarnessConfig, prompt::SYSTEM, turn::Turn};
+use super::super::{
+    config::HarnessConfig,
+    prompt::SYSTEM,
+    turn::{Delta, Turn},
+};
 use super::contract::ModelProtocol;
 use crate::tools::{ToolDefinition, ToolRegistry};
 use serde_json::{Value, json};
@@ -34,12 +38,20 @@ impl ModelProtocol for ResponsesProtocol {
         &self,
         turn: &mut Turn,
         v: Value,
-        delta: &mut dyn FnMut(String),
+        delta: &mut dyn FnMut(Delta),
     ) -> Result<(), String> {
         if v["type"] == "response.output_text.delta" {
             if let Some(text) = v["delta"].as_str() {
                 turn.append_text(text, delta);
             }
+        }
+        if let Some(text) = v["delta"].as_str().filter(|_| {
+            matches!(
+                v["type"].as_str().unwrap_or_default(),
+                "response.reasoning_summary_text.delta" | "response.reasoning_text.delta"
+            )
+        }) {
+            turn.append_reasoning(text, delta);
         }
         if v["type"] == "response.incomplete" {
             return Err(model_error(&v.to_string()));

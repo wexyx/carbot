@@ -100,9 +100,19 @@ impl Data {
 struct Inner {
     logs: super::ChatLog,
     data: std::sync::Mutex<Data>,
+    /// Serializes durable commits so the journal sequence stays ordered and a rejected
+    /// write can roll back without another transaction interleaving.
+    commit: std::sync::Mutex<()>,
     file: Option<PathBuf>,
     // OS advisory lock is released even after a crash; never unlink the lock file.
     _lock: Option<File>,
+}
+/// The only parts of a run row that hot paths need. A `runs` row also carries the whole
+/// prompt and the hydrated skill catalog, so cloning it per streamed token is pure cost.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunMeta {
+    pub status: Option<String>,
+    pub group_id: Option<String>,
 }
 #[derive(Clone)]
 pub struct Store(Arc<Inner>);
@@ -112,6 +122,7 @@ impl Store {
         Self(Arc::new(Inner {
             logs: super::ChatLog::temporary(),
             data: Default::default(),
+            commit: Default::default(),
             file: None,
             _lock: None,
         }))
@@ -127,6 +138,15 @@ impl Store {
     }
     pub async fn get(&self, c: &str, k: &str) -> Option<Value> {
         self.0.data.lock().unwrap().get(c, k).cloned()
+    }
+    /// Read-only run metadata without materializing the row.
+    pub async fn run_meta(&self, k: &str) -> Option<RunMeta> {
+        let data = self.0.data.lock().unwrap();
+        let row = data.get("runs", k)?;
+        Some(RunMeta {
+            status: row["status"].as_str().map(str::to_owned),
+            group_id: row["group_id"].as_str().map(str::to_owned),
+        })
     }
     pub async fn list(&self, c: &str) -> Vec<Value> {
         self.0.data.lock().unwrap().list(c)
@@ -145,67 +165,91 @@ impl Store {
         &self,
         change: impl FnOnce(&mut Data) -> Result<T, String>,
     ) -> Result<T, String> {
-        let mut data = self.0.data.lock().map_err(|_| "file store lock poisoned")?;
-        data.undo = Some(HashMap::new());
-        let result = match change(&mut data) {
-            Ok(result) => result,
-            Err(error) => {
-                data.rollback();
-                return Err(error);
-            }
-        };
-        let mut changes: Vec<_> = data
-            .undo
-            .as_ref()
-            .unwrap()
-            .iter()
-            .filter_map(|((collection, key), previous)| {
-                let value = data.get(collection, key).cloned();
-                (value != *previous).then(|| super::state_journal::Change {
-                    collection: collection.clone(),
-                    key: key.clone(),
-                    deleted: value.is_none(),
-                    value: value.unwrap_or(Value::Null),
-                })
-            })
-            .collect();
-        if !changes.is_empty() {
-            let Some(sequence) = data.sequence.checked_add(1) else {
-                data.rollback();
-                return Err("state sequence overflow".into());
-            };
-            if let Some(path) = &self.0.file {
-                for change in &mut changes {
-                    if change.deleted {
-                        continue;
-                    }
-                    match super::skill_files::persist(
-                        path.parent().unwrap(),
-                        &change.collection,
-                        &change.key,
-                        &change.value,
-                    ) {
-                        Ok(value) => {
-                            // Keep definitions hydrated for transaction validation, but publish
-                            // only references to their files in the durable JSONL journal.
-                            if let Some(pointer) = value.get("skill_files_directory") {
-                                let mut hydrated = change.value.clone();
-                                hydrated["skill_files_directory"] = pointer.clone();
-                                data.set(&change.collection, &change.key, hydrated);
-                            }
-                            change.value = value;
-                        }
-                        Err(error) => {
-                            data.rollback();
-                            return Err(error);
-                        }
-                    }
-                }
-                if let Err(error) = super::state_journal::append(path, sequence, changes) {
+        let _commit = self
+            .0
+            .commit
+            .lock()
+            .map_err(|_| "file store lock poisoned")?;
+        // The state lock covers memory only. Holding it across the journal's fdatasync
+        // stalled every concurrent reader on disk latency, which is the whole process.
+        let (result, pending, bump) = {
+            let mut data = self.0.data.lock().map_err(|_| "file store lock poisoned")?;
+            data.undo = Some(HashMap::new());
+            let result = match change(&mut data) {
+                Ok(result) => result,
+                Err(error) => {
                     data.rollback();
                     return Err(error);
                 }
+            };
+            let mut changes: Vec<_> = data
+                .undo
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter_map(|((collection, key), previous)| {
+                    let value = data.get(collection, key).cloned();
+                    (value != *previous).then(|| super::state_journal::Change {
+                        collection: collection.clone(),
+                        key: key.clone(),
+                        deleted: value.is_none(),
+                        value: value.unwrap_or(Value::Null),
+                    })
+                })
+                .collect();
+            let mut pending = None;
+            let mut bump = None;
+            if !changes.is_empty() {
+                let Some(sequence) = data.sequence.checked_add(1) else {
+                    data.rollback();
+                    return Err("state sequence overflow".into());
+                };
+                if let Some(path) = &self.0.file {
+                    for change in &mut changes {
+                        if change.deleted {
+                            continue;
+                        }
+                        match super::skill_files::persist(
+                            path.parent().unwrap(),
+                            &change.collection,
+                            &change.key,
+                            &change.value,
+                        ) {
+                            Ok(value) => {
+                                // Keep definitions hydrated for transaction validation, but publish
+                                // only references to their files in the durable JSONL journal.
+                                if let Some(pointer) = value.get("skill_files_directory") {
+                                    let mut hydrated = change.value.clone();
+                                    hydrated["skill_files_directory"] = pointer.clone();
+                                    data.set(&change.collection, &change.key, hydrated);
+                                }
+                                change.value = value;
+                            }
+                            Err(error) => {
+                                data.rollback();
+                                return Err(error);
+                            }
+                        }
+                    }
+                    pending = Some((path.clone(), sequence, changes));
+                }
+                bump = Some(sequence);
             }
+            (result, pending, bump)
+        };
+        if let Some((path, sequence, changes)) = pending {
+            if let Err(error) = super::state_journal::append(&path, sequence, changes) {
+                // The commit lock keeps the undo log valid, so memory is restored.
+                self.0
+                    .data
+                    .lock()
+                    .map_err(|_| "file store lock poisoned")?
+                    .rollback();
+                return Err(error);
+            }
+        }
+        let mut data = self.0.data.lock().map_err(|_| "file store lock poisoned")?;
+        if let Some(sequence) = bump {
             data.sequence = sequence;
         }
         data.undo = None;
@@ -300,6 +344,7 @@ pub async fn open(dir: &FilePath) -> Result<Store, String> {
     Ok(Store(Arc::new(Inner {
         logs,
         data: std::sync::Mutex::new(data),
+        commit: Default::default(),
         file: Some(journal),
         _lock: Some(lock),
     })))
@@ -383,6 +428,30 @@ mod tests {
             std::fs::read(dir.0.join("state.json")).unwrap(),
             b"invalid-json"
         );
+    }
+    #[tokio::test]
+    async fn run_meta_reports_status_and_group_without_materializing_the_row() {
+        let dir = Temp::new();
+        let store = open(&dir.0).await.unwrap();
+        store
+            .insert(
+                "runs",
+                "r1",
+                json!({"status":"running","group_id":"g1","prompt":"x".repeat(200_000)}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store.run_meta("r1").await,
+            Some(RunMeta {
+                status: Some("running".into()),
+                group_id: Some("g1".into())
+            })
+        );
+        assert_eq!(store.run_meta("missing").await, None);
+        // The bulky fields stay untouched on disk.
+        let row = store.get("runs", "r1").await.unwrap();
+        assert_eq!(row["prompt"].as_str().unwrap().len(), 200_000);
     }
     #[tokio::test]
     async fn failed_transaction_and_failed_disk_write_do_not_change_memory() {

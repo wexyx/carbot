@@ -30,25 +30,33 @@ impl crate::providers::Provider for Runtime {
     ) -> RuntimeFuture<'a> {
         Box::pin(async move {
             let process = crate::execution::native::NativeCommand::new(&self.config.workdir)?;
-            let credential = std::env::var_os("CODEX_HOME")
+            let home = super::super::home::home_dir();
+            let codex_home = std::env::var_os("CODEX_HOME")
                 .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| {
-                    std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
-                        .join(".codex")
-                })
-                .join("auth.json");
-            if crate::environment::AgentEnvironment::lookup("OPENAI_API_KEY").is_none() {
+                .unwrap_or_else(|| home.join(".codex"));
+            // `~/.codex` is around a gigabyte here, so pointing the CLI at it is the only
+            // affordable way to keep its agents, skills and config. Otherwise fall back to
+            // a scratch home with just the credential copied in.
+            let native = codex_home.is_dir();
+            if !native && crate::environment::AgentEnvironment::lookup("OPENAI_API_KEY").is_none() {
                 process
                     .import_credential(
                         &self.config.workdir,
-                        &credential,
+                        &codex_home.join("auth.json"),
                         std::path::Path::new(".codex/auth.json"),
                     )
                     .await?;
             }
             let mut command = process.command(self.launch.binary(), &self.config.workdir)?;
             command.args(self.launch.arguments());
-            command.env("CODEX_HOME", process.scratch().join(".codex"));
+            command.env(
+                "CODEX_HOME",
+                if native {
+                    codex_home
+                } else {
+                    process.scratch().join(".codex")
+                },
+            );
             for key in ["OPENAI_API_KEY", "OPENAI_BASE_URL"] {
                 if let Some(value) = crate::environment::AgentEnvironment::lookup(key) {
                     command.env(key, value);

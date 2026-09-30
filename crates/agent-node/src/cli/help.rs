@@ -31,7 +31,7 @@ pub(super) fn topic(name: &str) -> Result<&'static str, String> {
             r##"Agents（本地可维护，远端只读）
   /agent list                         完整目录，不受当前会话影响
   /agent show ID                      详情与版本
-  /agent add ID PROVIDER 角色          新增（carbot/codex/claude/mock）
+  /agent add ID PROVIDER 角色          新增（carbot/codex/claude/opencode/mock）
   /agent save JSON                    新增或编辑完整配置
   /agent virtual JSON                 新增或编辑虚拟 Agent
   /agent start ID                     启动

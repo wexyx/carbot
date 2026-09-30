@@ -1,3 +1,4 @@
+use super::super::home::config_dir;
 use super::super::process::capture_stderr;
 use super::config::ClaudeConfig;
 use super::parser;
@@ -30,20 +31,30 @@ impl crate::providers::Provider for Runtime {
     ) -> RuntimeFuture<'a> {
         Box::pin(async move {
             let process = crate::execution::native::NativeCommand::new(&self.config.workdir)?;
-            let credential = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
-                .join(".claude/.credentials.json");
-            if crate::environment::AgentEnvironment::lookup("ANTHROPIC_API_KEY").is_none()
-                && crate::environment::AgentEnvironment::lookup("CLAUDE_CODE_OAUTH_TOKEN").is_none()
-            {
-                process
-                    .import_credential(
-                        &self.config.workdir,
-                        &credential,
-                        std::path::Path::new(".claude/.credentials.json"),
-                    )
-                    .await?;
+            // Point the CLI at the user's real config rather than copying it: `~/.claude`
+            // is tens of megabytes and grows, so a per-turn copy would cost more than the
+            // turn. The rest of HOME stays scrubbed, so the child still cannot wander the
+            // rest of the user's home directory.
+            let config_dir = config_dir(".claude");
+            if config_dir.is_none() {
+                let credential = super::super::home::home_dir().join(".claude/.credentials.json");
+                if crate::environment::AgentEnvironment::lookup("ANTHROPIC_API_KEY").is_none()
+                    && crate::environment::AgentEnvironment::lookup("CLAUDE_CODE_OAUTH_TOKEN")
+                        .is_none()
+                {
+                    process
+                        .import_credential(
+                            &self.config.workdir,
+                            &credential,
+                            std::path::Path::new(".claude/.credentials.json"),
+                        )
+                        .await?;
+                }
             }
             let mut command = process.command(self.launch.binary(), &self.config.workdir)?;
+            if let Some(config_dir) = &config_dir {
+                command.env("CLAUDE_CONFIG_DIR", config_dir);
+            }
             command.args(self.launch.arguments());
             for key in [
                 "ANTHROPIC_API_KEY",

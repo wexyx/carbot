@@ -20,5 +20,7 @@ mod connections;
 
 mod directories;
 
+mod opencode;
+
 mod attachments;
 mod command_allowlist;

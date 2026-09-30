@@ -13,6 +13,7 @@ pub(crate) fn router_with_manager(state: AppState, manager: Arc<management::Mana
         .merge(crate::http::command_allowlist::routes(manager.clone()))
         .merge(crate::http::admin::routes(manager.clone()))
         .merge(crate::http::admin_configuration::routes(manager.clone()))
+        .merge(crate::http::opencode::routes(manager.clone()))
         .merge(crate::http::skills::routes(manager.clone()))
         .merge(crate::http::tools::routes(manager.clone()))
         .merge(crate::http::capabilities::routes(manager.clone()))

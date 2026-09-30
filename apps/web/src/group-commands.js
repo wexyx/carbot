@@ -8,6 +8,11 @@ export const groupCommands = [
   {name:'/group',usage:'/group mode chat|relay|a2a|pmo',description:'配置交流模式；instructions 修改协作要求'},
   {name:'/help',usage:'/help',description:'列出群聊命令'},
 ]
+
+// `@name` is not a command: it addresses one member of the current group.
+export function mentionHint(members) {
+  return members.length>1?`@名字 可只与该 Agent 对话（成员：${members.join('、')}）`:''
+}
 export function commandSuggestions(text) {
   const value=text.trimStart()
   if(!value.startsWith('/'))return []

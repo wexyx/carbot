@@ -5,6 +5,7 @@ pub(crate) mod error;
 pub(crate) mod events;
 mod group_configuration;
 pub(crate) mod local;
+pub(crate) mod mentions;
 pub(crate) mod messages;
 mod network;
 pub(crate) mod policies;

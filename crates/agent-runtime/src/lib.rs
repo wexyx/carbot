@@ -8,6 +8,7 @@ mod errors;
 mod events;
 pub mod execution;
 mod factory;
+pub mod json;
 mod managed_runtime;
 pub mod paths;
 mod providers;

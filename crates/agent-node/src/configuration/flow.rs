@@ -31,10 +31,13 @@ pub(crate) async fn edit<R: AsyncBufRead + Unpin>(
         "默认 Agent 配置：回车保留默认值，- 清空，/cancel 取消。配置保存在 CARBOT_DATA_DIR/default-agent.json（API Key 为明文，文件权限 0600）。"
     );
     let mut wizard = super::Wizard::new(settings);
+    wizard.refresh_catalog().await;
     loop {
         let field = wizard.field();
+        // The model step is only meaningful with the catalog in front of it.
+        print!("{}", wizard.catalog_text());
         let value = ask(lines, field.label, &field.default, field.secret).await?;
-        match wizard.accept(value) {
+        match wizard.accept(value).await {
             Ok(Some(settings)) => return Ok(settings),
             Ok(None) => {}
             Err(e) => println!("配置无效：{e}，请重新填写。"),

@@ -3,7 +3,7 @@ import {eventTime} from './chat-time.js'
 export function conversationView(events) {
   const rows=[]
   let answer=null
-  const answers=new Map(), planning=new Map()
+  const answers=new Map(), planning=new Map(), reasoning=new Map()
   const tools=[]
   const stringify=value=>typeof value==='string'?value:JSON.stringify(value,null,2)
   for(const event of events){
@@ -20,11 +20,19 @@ export function conversationView(events) {
       row.text=String(text);continue
     }
     if(type==='agent.member.error'){rows.push({seq:event.seq,type:'agent.error',timestamp,label,text,agent:speaker});answers.delete(key);continue}
-    if(['user','message.created','context.reset'].includes(type))answers.clear()
+    if(['user','message.created','context.reset'].includes(type)){answers.clear();reasoning.clear()}
     if((type==='context_checkpoint'||type==='agent.context')&&String(text).startsWith('Context compacted:')){
       answer=null;let existing=null;for(let i=rows.length-1;i>=0;i--){if(['user','message.created','context.reset'].includes(rows[i].type))break;if(rows[i].compacted){existing=rows[i];break}}if(existing)existing.timestamp=timestamp;else rows.push({seq:event.seq,type:'status',timestamp,text:'上下文已自动压缩 · 原始日志保留',label:'上下文',compacted:true});continue
     }
     if(type==='context.reset'){answer=null;rows.push({seq:event.seq,type:'status',timestamp,text:'新上下文 · 之前的记录不再发送给模型',label:'上下文'});continue}
+    if(type==='reasoning_delta'||type==='agent.reasoning'){
+      let thought=event.text ?? ''
+      if(!thought&&text){try{thought=JSON.parse(text).text??''}catch{thought=text}}
+      if(!thought)continue
+      let row=reasoning.get(key)
+      if(!row){row={seq:event.seq,type:'process',timestamp,label:label+' · 思考过程',name:'reasoning',text:'',agent:speaker,invocation_id:event.invocation_id,pending:true};reasoning.set(key,row);rows.push(row)}
+      row.text+=thought;answer=null;continue
+    }
     if(type==='context_checkpoint'||type==='agent.context'||type==='agent.progress')continue
     if(type==='text_delta'||type==='agent.delta'){
       if(!text)continue
@@ -32,6 +40,7 @@ export function conversationView(events) {
       if(!answer){answer={seq:event.seq,type:'assistant',timestamp,text:'',label,agent:speaker,invocation_id:event.invocation_id};rows.push(answer);answers.set(key,answer)}
       answer.text+=text
     }else if(type==='completed'||type==='agent.done'||type==='agent.message'){
+      reasoning.delete(key)
       answer=answers.get(key)
       if(text){
         if(answer)answer.text=text

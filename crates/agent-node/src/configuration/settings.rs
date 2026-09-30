@@ -1,4 +1,6 @@
-use agent_runtime::config::{ClaudeConfig, CodexConfig, HarnessConfig, RuntimeConfig};
+use agent_runtime::config::{
+    ClaudeConfig, CodexConfig, HarnessConfig, OpenCodeConfig, RuntimeConfig,
+};
 use std::{collections::BTreeMap, io::Write, path::PathBuf};
 
 const KEYS: &[&str] = &[
@@ -15,6 +17,12 @@ const KEYS: &[&str] = &[
     "CONTEXT_RECENT_TURNS",
     "CODEX_BIN",
     "CLAUDE_BIN",
+    "OPENCODE_BIN",
+    "OPENCODE_MODEL",
+    "OPENCODE_AGENT",
+    "OPENCODE_AUTO_APPROVE",
+    "OPENCODE_THINKING",
+    "OPENCODE_STANDALONE",
     "AGENT_ENV_JSON",
 ];
 
@@ -141,9 +149,66 @@ impl Settings {
                 cfg.validate_launch()?;
                 Ok(RuntimeConfig::Claude(cfg))
             }
+            "opencode" => {
+                let cfg = self.opencode_with(environment, None)?;
+                cfg.validate_launch()?;
+                Ok(RuntimeConfig::OpenCode(cfg))
+            }
             "mock" => Ok(RuntimeConfig::Mock),
-            _ => Err("ADMIN_AGENT_PROVIDER must be carbot, codex, claude or mock".into()),
+            _ => Err("ADMIN_AGENT_PROVIDER must be carbot, codex, claude, opencode or mock".into()),
         }
+    }
+    /// Build the OpenCode runner independently of which runner is currently saved.
+    ///
+    /// The model picker is reachable while the operator is still choosing a runner,
+    /// and a per-Agent override may name its own launcher, so neither the active
+    /// provider nor the active configuration may gate this.
+    pub(crate) fn opencode(&self, launcher: Option<&str>) -> Result<OpenCodeConfig, String> {
+        let environment =
+            agent_runtime::environment::AgentEnvironment::from_json(self.get("AGENT_ENV_JSON"))?;
+        self.opencode_with(environment, launcher)
+    }
+    fn opencode_with(
+        &self,
+        environment: agent_runtime::environment::AgentEnvironment,
+        launcher: Option<&str>,
+    ) -> Result<OpenCodeConfig, String> {
+        let mut cfg = OpenCodeConfig::from_env();
+        cfg.environment = environment;
+        // Saved settings win over the process environment, as for Codex and Claude.
+        if !self.get("OPENCODE_BIN").is_empty() {
+            cfg.binary = self.get("OPENCODE_BIN").into();
+        }
+        // A caller that owns its own launcher (a per-Agent override) outranks both.
+        if let Some(launcher) = launcher.filter(|value| !value.trim().is_empty()) {
+            cfg.binary = launcher.into();
+        }
+        if !self.get("OPENCODE_MODEL").is_empty() {
+            cfg.model = self.get("OPENCODE_MODEL").into();
+        }
+        if !self.get("OPENCODE_AGENT").is_empty() {
+            cfg.agent = self.get("OPENCODE_AGENT").into();
+        }
+        if let Some(raw) = self.values.get("OPENCODE_AUTO_APPROVE") {
+            cfg.auto_approve = matches!(
+                raw.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            );
+        }
+        // Only an explicit value moves these; an absent key keeps the runtime default,
+        // so a configuration saved before they existed keeps behaving the same way.
+        for (key, target) in [
+            ("OPENCODE_THINKING", &mut cfg.thinking),
+            ("OPENCODE_STANDALONE", &mut cfg.standalone),
+        ] {
+            if let Some(raw) = self.values.get(key) {
+                *target = matches!(
+                    raw.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                );
+            }
+        }
+        Ok(cfg)
     }
     pub(crate) fn save(&self) -> Result<(), String> {
         self.save_to(&Self::path())
@@ -255,7 +320,7 @@ mod tests {
                 0o600
             );
         }
-        for provider in ["codex", "claude", "mock"] {
+        for provider in ["codex", "claude", "opencode", "mock"] {
             cfg.set("ADMIN_AGENT_PROVIDER", provider.into());
             assert!(cfg.runtime().is_ok());
         }

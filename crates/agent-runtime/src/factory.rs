@@ -41,6 +41,7 @@ impl RuntimeFactory {
             RuntimeConfig::Carbot(cfg) => Some(cfg.root.clone()),
             RuntimeConfig::Codex(cfg) => Some(cfg.workdir.clone()),
             RuntimeConfig::Claude(cfg) => Some(cfg.workdir.clone()),
+            RuntimeConfig::OpenCode(cfg) => Some(cfg.workdir.clone()),
             _ => {
                 if tools.external().is_empty() {
                     None
@@ -81,6 +82,11 @@ impl RuntimeFactory {
                 cfg.workdir = workspace.path().into();
                 cfg.permission_mode = "plan".into();
             }
+            RuntimeConfig::OpenCode(cfg) => {
+                cfg.workdir = workspace.path().into();
+                // A management session must never auto-approve its own tool calls.
+                cfg.auto_approve = false;
+            }
             RuntimeConfig::Carbot(cfg) => {
                 cfg.root = workspace.path().into();
             }
@@ -98,6 +104,7 @@ impl RuntimeFactory {
             RuntimeConfig::Carbot(cfg) => cfg.root.clone(),
             RuntimeConfig::Codex(cfg) => cfg.workdir.clone(),
             RuntimeConfig::Claude(cfg) => cfg.workdir.clone(),
+            RuntimeConfig::OpenCode(cfg) => cfg.workdir.clone(),
             RuntimeConfig::Mock => {
                 crate::workspace::WorkspaceSettings::root().unwrap_or_else(crate::config::workdir)
             }
@@ -112,6 +119,7 @@ impl RuntimeFactory {
             )?),
             RuntimeConfig::Claude(config) => Box::new(providers::claude::Runtime::new(config)?),
             RuntimeConfig::Codex(config) => Box::new(providers::codex::Runtime::new(config)?),
+            RuntimeConfig::OpenCode(config) => Box::new(providers::opencode::Runtime::new(config)?),
         };
         let provider = if provider.handles_tools() || registry.definitions().is_empty() {
             provider

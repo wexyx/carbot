@@ -97,7 +97,10 @@ pub(crate) async fn events(
                         (log, key, seq, queue, false),
                     ));
                 }
-                match log.read(p, key.clone(), seq, u64::MAX, 1000).await {
+                // The live poll must not take a write barrier: it used to, which made a
+                // streaming response pay an fsync several times a second and held up the
+                // writer it was waiting on.
+                match log.read_recent(p, key.clone(), seq, 1000).await {
                     Ok(rows) => queue = rows.into(),
                     Err(error) => {
                         return Some((

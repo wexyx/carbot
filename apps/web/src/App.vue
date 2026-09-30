@@ -13,7 +13,8 @@ import GroupConfiguration from './GroupConfiguration.vue'
 import AgentManagement from './AgentManagement.vue'
 import ChatMenu from './ChatMenu.vue'
 import NetworkConfiguration from './NetworkConfiguration.vue'
-import {commandSuggestions,validateGroupCommand} from './group-commands.js'
+import {commandSuggestions,mentionHint,validateGroupCommand} from './group-commands.js'
+import {applyMention,highlighted,mentionAt,mentionCandidates,mentionKey,moveHighlight} from './mentions.js'
 import MarkdownText from './MarkdownText.vue'
 import ChatMessages from './ChatMessages.vue'
 import AttachmentPicker from './AttachmentPicker.vue'
@@ -40,10 +41,24 @@ const allowlistVersion=ref(0)
 const skillsOpen=ref(false),toolsOpen=ref(false),commandReply=ref(''),membersOpen=ref(false),tab=ref('projects')
 const selectedGroup=computed(()=>groups.value.find(g=>g.key===selected.value))
 const suggestions=computed(()=>selected.value?commandSuggestions(text.value).filter(c=>selected.value!=='admin'||c.name==='/new'):[])
+// `@name` addresses one member of this group instead of the whole roster.
+const groupMembers=computed(()=>selectedGroup.value?.body?.policy?.members?.map(m=>m.path?.[m.path.length-1]).filter(Boolean)||[])
+// The picker is positioned by the `@` being typed, so it opens above the composer
+// instead of pushing the text area around.
+const mentionAtCursor=computed(()=>mentionAt(text.value))
+const mentionIndex=ref(0),dismissedAt=ref(-1)
+const mentionOpen=computed(()=>mentionAtCursor.value&&mentionAtCursor.value.start!==dismissedAt.value)
+const mentionChoices=computed(()=>mentionOpen.value?mentionCandidates(text.value,groupMembers.value):[])
+const mentionHintText=computed(()=>mentionHint(groupMembers.value))
+// Filtering and moving between groups both restart the highlight at the top, and a
+// `@` that was deleted entirely forgets its dismissal so the next one reopens.
+watch(mentionChoices,()=>{mentionIndex.value=0})
+watch(mentionAtCursor,value=>{if(!value&&dismissedAt.value>=0)dismissedAt.value=-1})
 const apiRequest=(...args)=>connection.request(...args)
 const apiStream=(...args)=>connection.stream(...args)
 function assignChanged(target,value){if(JSON.stringify(target.value)!==JSON.stringify(value))target.value=value}
 function insertCommand(value){text.value=value;membersOpen.value=false;document.querySelector('textarea[aria-label="消息"]')?.focus()}
+function insertMention(name){text.value=applyMention(text.value,name);dismissedAt.value=-1;document.querySelector('textarea[aria-label="消息"]')?.focus()}
 async function selectTab(value){await router.push({name:value==='management'?'management':'project',params:value==='projects'&&groups.value.length?{group:groups.value[0].key}:{}})}
 const settings=ref(false), mobileList=ref(false), topicId=ref('')
 const viewingLog=ref(null)
@@ -218,7 +233,17 @@ async function decide(item,allow,workspace=false,conversation=false){
   const path=workspace?`/v1/workspace/approvals/${item.id}`:base()+`/approvals/${item.id}`
   await connection.request(path,post({allow,conversation}));await refresh()
 }
-function enter(event){if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();perform(send)}}
+function enter(event){
+ // The `@` picker owns these keys while it is open, so an Agent can be chosen
+ // with the keyboard alone. Everything else still belongs to the textarea.
+ const action=mentionKey(event.key,mentionChoices.value,event.isComposing)
+ if(action==='next'){event.preventDefault();mentionIndex.value=moveHighlight(mentionIndex.value,1,mentionChoices.value.length);return}
+ if(action==='previous'){event.preventDefault();mentionIndex.value=moveHighlight(mentionIndex.value,-1,mentionChoices.value.length);return}
+ if(action==='accept'){event.preventDefault();const name=highlighted(mentionChoices.value,mentionIndex.value);if(name)insertMention(name);else dismissMention();return}
+ if(action==='dismiss'){event.preventDefault();dismissMention();return}
+ if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();perform(send)}
+}
+function dismissMention(){dismissedAt.value=mentionAtCursor.value?mentionAtCursor.value.start:-1}
 onMounted(()=>perform(async()=>{try{await connect()}catch(e){settings.value=true;throw e}}))
 onBeforeUnmount(close)
 </script>
@@ -246,7 +271,7 @@ onBeforeUnmount(close)
           <ApprovalCard v-for="a in visiblePaths" :key="a.id" :item="a" workspace @conversation="perform(()=>decide(a,true,true,true))" @decide="allow=>perform(()=>decide(a,allow,true))"/>
         </div>
         
-<div v-if="suggestions.length" class="command-suggestions" aria-label="群聊命令提示"><el-button type="primary" native-type="button" v-for="item in suggestions" :key="item.name" @click="insertCommand(['/agents','/help'].includes(item.name)?item.name:item.name+' ')"><code>{{item.usage}}</code><span>{{item.description}}</span></el-button></div><el-form class="composer" @submit.prevent="perform(send)" label-position="top"><el-input type="textarea" v-model="text" @keydown="enter" :disabled="!connected||!project" aria-label="消息"  :placeholder="selected==='admin'?'输入管理指令或问题…':'发送消息，或 /add-agent、/remove-agent、/agent…'" rows="3"></el-input><div class="composer-toolbar"><div class="composer-left"><PermissionControl v-if="selectedGroup?.body.policy.members.length===1&&selectedGroup.body.policy.members[0].path.length===1&&managedAgents.some(a=>a.kind==='local'&&a.id===selectedGroup.body.policy.members[0].path[0])" compact :project="project" :agent="selectedGroup.body.policy.members[0].path[0]" :request="apiRequest"/><el-button type="default" :disabled="!connected||busy||running" @click="perform(resetContext)" title="不删除历史记录，仅重置后续对话上下文">重置上下文</el-button></div><AttachmentPicker :key="project+':'+selected" ref="attachmentPicker" v-model="attachments" :request="apiRequest" :disabled="!connected||!project||busy||running" @uploading="uploading=$event" @error="error=$event"/><el-button type="default" native-type="button" v-if="running&&!(selected!=='admin'&&text.trim().startsWith('/'))" class="secondary" :disabled="busy" @click="perform(interrupt)">{{busy?'发送中…':'■ 停止生成'}}</el-button><el-button type="primary" native-type="button" @click="perform(send)" v-else :loading="busy" :disabled="!connected||!project||busy||uploading||(!text.trim()&&!attachments.length)" class="send-button">发送 ↑</el-button></div></el-form><p class="composer-note">数据保存在当前 Agent · 重要操作会先征求你的确认</p></div>
+<p v-if="mentionHintText" class="composer-note">{{mentionHintText}}</p><div v-if="mentionChoices.length" class="mention-popup" role="listbox" aria-label="选择要对话的 Agent"><button v-for="(name,index) in mentionChoices" :key="name" type="button" role="option" :aria-selected="index===mentionIndex" :class="['mention-option',{active:index===mentionIndex}]" @mousedown.prevent="insertMention(name)" @mouseenter="mentionIndex=index"><code>@{{name}}</code><span>只与该 Agent 对话</span></button><small class="mention-hint">↑↓ 选择 · Enter 确认 · Esc 关闭</small></div><div v-if="suggestions.length" class="command-suggestions" aria-label="群聊命令提示"><el-button type="primary" native-type="button" v-for="item in suggestions" :key="item.name" @click="insertCommand(['/agents','/help'].includes(item.name)?item.name:item.name+' ')"><code>{{item.usage}}</code><span>{{item.description}}</span></el-button></div><el-form class="composer" @submit.prevent="perform(send)" label-position="top"><el-input type="textarea" v-model="text" @keydown="enter" :disabled="!connected||!project" aria-label="消息"  :placeholder="selected==='admin'?'输入管理指令或问题…':groupMembers.length>1?'发送消息；@名字 可只与该 Agent 对话，或 /add-agent、/remove-agent、/agent…':'发送消息'" rows="3"></el-input><div class="composer-toolbar"><div class="composer-left"><PermissionControl v-if="selectedGroup?.body.policy.members.length===1&&selectedGroup.body.policy.members[0].path.length===1&&managedAgents.some(a=>a.kind==='local'&&a.id===selectedGroup.body.policy.members[0].path[0])" compact :project="project" :agent="selectedGroup.body.policy.members[0].path[0]" :request="apiRequest"/><el-button type="default" :disabled="!connected||busy||running" @click="perform(resetContext)" title="不删除历史记录，仅重置后续对话上下文">重置上下文</el-button></div><AttachmentPicker :key="project+':'+selected" ref="attachmentPicker" v-model="attachments" :request="apiRequest" :disabled="!connected||!project||busy||running" @uploading="uploading=$event" @error="error=$event"/><el-button type="default" native-type="button" v-if="running&&!(selected!=='admin'&&text.trim().startsWith('/'))" class="secondary" :disabled="busy" @click="perform(interrupt)">{{busy?'发送中…':'■ 停止生成'}}</el-button><el-button type="primary" native-type="button" @click="perform(send)" v-else :loading="busy" :disabled="!connected||!project||busy||uploading||(!text.trim()&&!attachments.length)" class="send-button">发送 ↑</el-button></div></el-form><p class="composer-note">数据保存在当前 Agent · 重要操作会先征求你的确认</p></div>
     </section>
     <section v-else-if="!agentsOpen&&!networkOpen&&!toolsOpen&&!skillsOpen&&!allowlistOpen" class="empty-project"><el-button type="default" native-type="button" class="secondary mobile-toggle" @click="mobileList=true">查看项目与设置</el-button><h2>项目</h2><p>创建一个项目，邀请 Agent 开始协作。</p><el-button type="primary" native-type="button" :disabled="!connected||!project" @click="openPanel('new-group')">＋ 创建项目</el-button></section>
     <NetworkConfiguration v-if="networkOpen" :project="project" :request="apiRequest" @close="closePanel"/>

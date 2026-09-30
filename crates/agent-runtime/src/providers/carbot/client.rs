@@ -2,7 +2,7 @@ use super::{
     config::HarnessConfig,
     model_error::model_error,
     protocol::{ModelProtocol, ProtocolFactory},
-    turn::Turn,
+    turn::{Delta, Turn},
 };
 use crate::{RuntimeEvent, tools::ToolRegistry};
 use agent_protocol::SseDecoder;
@@ -197,9 +197,13 @@ impl ModelClient {
                 {
                     return Err(model_error(&value.to_string()));
                 }
-                self.protocol.consume(&mut turn, value, &mut |text| {
-                    events(RuntimeEvent::TextDelta { text })
-                })?;
+                // One sink, tagged per channel: the answer and the deliberation are
+                // distinct events, and presentation decides what is folded away.
+                self.protocol
+                    .consume(&mut turn, value, &mut |delta| match delta {
+                        Delta::Answer(text) => events(RuntimeEvent::TextDelta { text }),
+                        Delta::Reasoning(text) => events(RuntimeEvent::ReasoningDelta { text }),
+                    })?;
             }
             // Protocol completion, not TCP EOF, ends a turn. Some SSE servers keep
             // the connection open after finish_reason / message_delta / response.completed.

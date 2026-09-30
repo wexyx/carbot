@@ -104,6 +104,13 @@ impl AgentEnvironment {
             command.envs(&env.values);
         });
     }
+    /// Overlay these variables onto a command that otherwise inherits the host.
+    ///
+    /// For host introspection such as reading the OpenCode model catalog, which
+    /// lives in the user's own OpenCode profile rather than in a workspace.
+    pub fn overlay(&self, command: &mut tokio::process::Command) {
+        command.envs(&self.values);
+    }
 }
 
 #[cfg(test)]

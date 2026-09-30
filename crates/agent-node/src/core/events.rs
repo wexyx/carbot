@@ -6,10 +6,14 @@ pub(crate) async fn persist_event(
     event: &WireEvent,
 ) -> bool {
     let result=async {
-        let run=match event.data["message_id"].as_str(){Some(id)=>state.store.get("runs",id).await,None=>None};
-        if event.kind.starts_with("agent.")&&run.as_ref().is_some_and(|r|r["status"]=="interrupted"){return Err("late output from interrupted run".into());}
-        let session_run=state.store.get("runs",&event.session_id.to_string()).await;
-        let group=run.as_ref().or(session_run.as_ref()).and_then(|r|r["group_id"].as_str());
+        let run=match event.data["message_id"].as_str(){Some(id)=>state.store.run_meta(id).await,None=>None};
+        if event.kind.starts_with("agent.")&&run.as_ref().is_some_and(|r|r.status.as_deref()==Some("interrupted")){return Err("late output from interrupted run".into());}
+        // Only consult the session row when the message id did not already resolve; in a
+        // group run both are the same key, and this runs once per streamed token.
+        let group=match run.as_ref().and_then(|r|r.group_id.clone()){
+            Some(group)=>Some(group),
+            None=>state.store.run_meta(&event.session_id.to_string()).await.and_then(|r|r.group_id),
+        };
         let chat=group.map(|g|format!("group:{g}")).unwrap_or_else(||channel.to_string());
         let rows = vec![json!({"id":event.id,"project_id":project_id,"channel":channel,"type":event.kind,"payload":event,"created_at":storage::now().to_string()})];
         if event.kind.starts_with("agent.") && !matches!(event.kind.as_str(), "agent.done" | "agent.error") {

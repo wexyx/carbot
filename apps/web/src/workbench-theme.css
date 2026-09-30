@@ -91,6 +91,11 @@ small { color: var(--muted); }
 .command-suggestions button { color: #d4e5fa; }
 .command-suggestions button:hover { background: #213953; }
 .command-suggestions span { color: #a0b4cb; }
+.mention-popup { background: #152237; border-color: #385371; }
+.mention-option { color: #d4e5fa; }
+.mention-option span, .mention-hint { color: #a0b4cb; }
+.mention-option.active, .mention-option:hover { background: #213953; }
+.mention-hint { border-top-color: #385371; }
 .markdown-body pre,.markdown-body code { background: #0a131f; color: #c4dcf6; border-color: #2c415a; }
 .markdown-body pre code { background: transparent; }
 .markdown-body th { background: #1d2c40; }

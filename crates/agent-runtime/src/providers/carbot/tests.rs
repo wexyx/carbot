@@ -63,7 +63,7 @@ fn turn_rejects_truncation_limits_and_excess_calls() {
 fn adapters_preserve_reasoning_and_vendor_metadata_in_history() {
     let chat = ProtocolFactory::create(Api::Chat);
     let mut turn = Turn::new();
-    chat.consume(&mut turn,json!({"choices":[{"delta":{"reasoning_content":"reasoning","tool_calls":[{"index":0,"id":"call","function":{"name":"echo","arguments":"{}"},"extra_content":{"signature":"opaque"}}]},"finish_reason":"tool_calls"}]}),&mut |_|{}).unwrap();
+    chat.consume(&mut turn,json!({"choices":[{"delta":{"reasoning_content":"reasoning","tool_calls":[{"index":0,"id":"call","function":{"name":"echo","arguments":"{}"},"extra_content":{"signature":"opaque"}}]},"finish_reason":"tool_calls"}]}),&mut |_| {}).unwrap();
     let mut history = Vec::new();
     chat.append_history(&mut history, &turn, &BTreeMap::from([(0, "ok".into())]));
     assert_eq!(history[0]["reasoning_content"], "reasoning");
@@ -207,7 +207,7 @@ async fn all_three_protocols_complete_twenty_tool_roundtrips() {
 #[test]
 fn chat_tool_arguments_accumulate_across_chunks() {
     let mut turn = Turn::default();
-    let mut discard = |_| {};
+    let mut discard = |_: super::turn::Delta| {};
     ProtocolFactory::create(Api::Chat).consume(&mut turn, json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"read_file","arguments":"{\"path\":"}}]}}]}), &mut discard).unwrap();
     ProtocolFactory::create(Api::Chat).consume(&mut turn, json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"README.md\"}"}}]},"finish_reason":"tool_calls"}]}), &mut discard).unwrap();
     assert_eq!(

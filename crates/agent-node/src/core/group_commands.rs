@@ -5,7 +5,7 @@ use super::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-pub(crate) const HELP: &str = "/new（新上下文，保留历史）\n/members（或 /agents）\n/add-agent PATH [群内角色]\n/remove-agent PATH\n/agent PATH\n/agent PATH role 群内角色\n/agent PATH leader\n/agent PATH provider mock|carbot|codex|claude（先停止）\n/agent PATH start\n/group mode chat|relay|a2a|pmo\n/group instructions 群协作要求";
+pub(crate) const HELP: &str = "@名字 内容（只与该 Agent 对话；未 @ 时按群模式协作）\n/new（新上下文，保留历史）\n/members（或 /agents）\n/add-agent PATH [群内角色]\n/remove-agent PATH\n/agent PATH\n/agent PATH role 群内角色\n/agent PATH leader\n/agent PATH provider mock|carbot|codex|claude|opencode（先停止）\n/agent PATH start\n/group mode chat|relay|a2a|pmo\n/group instructions 群协作要求";
 impl Core {
     pub(crate) async fn group_command(
         &self,

@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{core::Core, *};
 use policies::{Member, Mode, Policy};
 
 #[tokio::test]
@@ -367,6 +367,22 @@ async fn executor(s: &AppState, p: Uuid, id: &str, logs: Arc<Mutex<Vec<String>>>
                     json!({"priority":if id=="worker"{95}else{20},"reason":"role match"})
                         .to_string(),
                 )
+            } else if id == "chatty" && prompt.contains("Return ONLY JSON") {
+                // How a model actually answers when told to return only JSON.
+                (
+                    "agent.message",
+                    "Sure, here is the split:\n```json\n{\"assignments\":[{\"member\":\"worker\",\"instruction\":\"do research\"}]}\n```\nLet me know if you want it rebalanced.".into(),
+                )
+            } else if id == "reluctant" && prompt.contains("previous answer was rejected") {
+                // Tells itself off the first time, then answers properly.
+                (
+                    "agent.message",
+                    r#"{"assignments":[{"member":"worker","instruction":"do research"}]}"#.into(),
+                )
+            } else if id == "reluctant" {
+                ("agent.message", "I'd rather not split this up.".into())
+            } else if id == "stubborn" && prompt.contains("Return ONLY JSON") {
+                ("agent.message", "No.".into())
             } else if prompt.contains("Return ONLY JSON") {
                 (
                     "agent.message",
@@ -649,7 +665,7 @@ async fn relay_a2a_and_pmo_execute_real_member_dispatch() {
         role: "researcher".into(),
     });
     let (tx, _) = mpsc::channel(128);
-    let answer = policies::engine(&s, p, &policy, "task", None, tx, &[])
+    let answer = policies::engine(&s, p, &policy, "task", &policies::Dispatch::new(&tx, &[]))
         .await
         .unwrap();
     assert_eq!(answer, "worker completed");
@@ -661,22 +677,566 @@ async fn relay_a2a_and_pmo_execute_real_member_dispatch() {
     policy.rounds = 2;
     logs.lock().await.clear();
     let (tx, _) = mpsc::channel(128);
-    policies::engine(&s, p, &policy, "discuss", None, tx, &[])
-        .await
-        .unwrap();
+    policies::engine(
+        &s,
+        p,
+        &policy,
+        "discuss",
+        &policies::Dispatch::new(&tx, &[]),
+    )
+    .await
+    .unwrap();
     assert_eq!(logs.lock().await.len(), 4);
     assert!(logs.lock().await[1].contains("leader completed"));
     policy.mode = Mode::Pmo;
     policy.leader = Some(vec!["leader".into()]);
     logs.lock().await.clear();
     let (tx, _) = mpsc::channel(128);
-    policies::engine(&s, p, &policy, "plan", None, tx, &[])
+    policies::engine(&s, p, &policy, "plan", &policies::Dispatch::new(&tx, &[]))
         .await
         .unwrap();
     let logs = logs.lock().await;
     assert_eq!(logs.len(), 3);
     assert!(logs[1].contains("do research"));
     assert!(logs[2].contains("worker completed"));
+}
+
+#[tokio::test]
+async fn a2a_round_two_flags_each_speaker_own_messages() {
+    let s = state("a2a-self").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["leader", "worker"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("leader");
+    policy.members.push(Member {
+        path: vec!["worker".into()],
+        role: "researcher".into(),
+    });
+    policy.mode = Mode::A2a;
+    policy.rounds = 2;
+    let (tx, _) = mpsc::channel(128);
+    policies::engine(
+        &s,
+        p,
+        &policy,
+        "discuss",
+        &policies::Dispatch::new(&tx, &[]),
+    )
+    .await
+    .unwrap();
+    let logs = logs.lock().await;
+    // Dispatch order: round1 leader, round1 worker, round2 leader, round2 worker.
+    assert_eq!(logs.len(), 4);
+    let round2_leader = &logs[2];
+    assert!(round2_leader.contains("你（leader"));
+    assert!(round2_leader.contains("worker: worker completed"));
+    // The leader's own round-1 statement is not presented as another participant's line.
+    assert!(!round2_leader.contains("\nleader: leader completed"));
+    let round2_worker = &logs[3];
+    assert!(round2_worker.contains("你（worker"));
+    assert!(round2_worker.contains("leader: leader completed"));
+}
+
+#[tokio::test]
+async fn every_mode_states_each_members_own_identity() {
+    for mode in [Mode::Chat, Mode::Relay, Mode::A2a, Mode::Pmo] {
+        let s = state("identity").await;
+        let p = Uuid::new_v4();
+        let logs = Arc::new(Mutex::new(vec![]));
+        let mut policy = relay("leader");
+        // Chat mode is single-member by contract, so the roster cannot be widened.
+        if mode != Mode::Chat {
+            executor(&s, p, "worker", logs.clone()).await;
+            policy.members.push(Member {
+                path: vec!["worker".into()],
+                role: "researcher".into(),
+            });
+        }
+        executor(&s, p, "leader", logs.clone()).await;
+        policy.mode = mode.clone();
+        policy.leader = Some(vec!["leader".into()]);
+        policy.rounds = 1;
+        let (tx, _) = mpsc::channel(128);
+        policies::engine(
+            &s,
+            p,
+            &policy,
+            "discuss",
+            &policies::Dispatch::new(&tx, &[]),
+        )
+        .await
+        .unwrap();
+        let logs = logs.lock().await;
+        assert!(!logs.is_empty(), "{mode:?} dispatched nobody");
+        for entry in logs.iter() {
+            let speaker = entry.split(':').next().unwrap();
+            assert!(
+                entry.contains(&format!("You are Agent \"{speaker}\" in this group")),
+                "{mode:?} never told {speaker} who it is: {entry}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn pmo_leader_is_shown_its_own_assignments_before_summarizing() {
+    let s = state("pmo-self").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["leader", "worker"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("leader");
+    policy.members.push(Member {
+        path: vec!["worker".into()],
+        role: "researcher".into(),
+    });
+    policy.mode = Mode::Pmo;
+    policy.leader = Some(vec!["leader".into()]);
+    let (tx, _) = mpsc::channel(128);
+    policies::engine(&s, p, &policy, "plan", &policies::Dispatch::new(&tx, &[]))
+        .await
+        .unwrap();
+    let logs = logs.lock().await;
+    assert_eq!(logs.len(), 3);
+    // The worker is told who assigned it.
+    assert!(logs[1].contains("PMO assignment from leader"));
+    // The leader is shown its own instruction as its own, not as fresh input.
+    let summarize = &logs[2];
+    assert!(summarize.contains("你（leader，你自己下发的指令）"));
+    assert!(summarize.contains("worker: do research"));
+    assert!(summarize.contains("worker: worker completed"));
+}
+
+/// Turn 2+ replays the previous turn's records into every member's prompt. Without a
+/// per-reader marker each Agent cannot tell which of those records it wrote itself.
+#[tokio::test]
+async fn prior_group_records_are_marked_as_self_for_their_author() {
+    let s = state("prior-self").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["leader", "worker"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("leader");
+    policy.members.push(Member {
+        path: vec!["worker".into()],
+        role: "researcher".into(),
+    });
+    policy.leader = Some(vec!["leader".into()]);
+    policy.mode = Mode::Pmo;
+    s.policy_store
+        .put(
+            p,
+            "group",
+            "g1",
+            0,
+            json!({
+                "name":"g","auto_name":false,"policy":policy,
+                "workspace":Value::Null,"status":"ready"
+            }),
+        )
+        .await
+        .unwrap();
+    for content in ["first", "second"] {
+        logs.lock().await.clear();
+        policies::begin_group(
+            &s,
+            policies::RunRequest {
+                project_id: p,
+                group_id: "g1".into(),
+                content: content.into(),
+                previous_session_id: None,
+                mentions: vec![],
+                prompt: None,
+            },
+        )
+        .await
+        .unwrap();
+        // A group run occupies its slot until the terminal event lands, so the next turn
+        // must wait for it instead of being rejected as concurrent.
+        for _ in 0..250 {
+            let busy = s
+                .store
+                .list("runs")
+                .await
+                .iter()
+                .any(|r| matches!(r["status"].as_str(), Some("queued" | "running")));
+            if !busy && logs.lock().await.len() >= 3 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        if content == "second" {
+            let logs = logs.lock().await;
+            assert_eq!(logs.len(), 3, "turn 2 dispatched {}/3 members", logs.len());
+            for entry in logs.iter() {
+                let speaker = entry.split(':').next().unwrap();
+                let replayed = entry
+                    .split_once("Previous topic records from this group")
+                    .and_then(|(_, rest)| rest.split('\n').nth(1))
+                    .unwrap_or_else(|| panic!("{speaker} got no prior records: {entry}"));
+                let records: Vec<Value> = serde_json::from_str(replayed).unwrap();
+                let spoken = records
+                    .iter()
+                    .filter(|r| r["agent"].is_string() && r["type"] == "agent.message")
+                    .collect::<Vec<_>>();
+                assert!(
+                    spoken
+                        .iter()
+                        .any(|r| r["agent"] == json!(speaker) && r["self"] == json!(true)),
+                    "{speaker} was not told which records are its own: {replayed}"
+                );
+                assert!(
+                    spoken
+                        .iter()
+                        .any(|r| r["agent"] != json!(speaker) && r["self"] == json!(false)),
+                    "{speaker} cannot tell the other member's records apart: {replayed}"
+                );
+                // The human's turn and the group aggregate stay unattributed, so no member
+                // can mistake them for something it said.
+                assert!(
+                    records
+                        .iter()
+                        .any(|r| r["agent"].is_null() && r["self"] == json!(false))
+                );
+            }
+        }
+    }
+}
+
+/// Run one turn and wait for it, so a following turn sees a settled group.
+async fn turn(s: &AppState, p: Uuid, key: &str, content: &str, mentions: Vec<Vec<String>>) {
+    policies::begin_group(
+        s,
+        policies::RunRequest {
+            project_id: p,
+            group_id: key.into(),
+            content: content.into(),
+            previous_session_id: None,
+            mentions,
+            // These tests exercise dispatch narrowing, not address stripping, which
+            // `group_chat` does before it gets here.
+            prompt: None,
+        },
+    )
+    .await
+    .unwrap();
+    for _ in 0..250 {
+        if !s
+            .store
+            .list("runs")
+            .await
+            .iter()
+            .any(|r| matches!(r["status"].as_str(), Some("queued" | "running")))
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+/// Register a project the way a real node does, then place `policy` in a group.
+/// `group_chat` rejects an unknown project before it ever looks at the message.
+async fn group(s: &AppState, p: Uuid, policy: Policy) {
+    s.store
+        .insert(
+            "projects",
+            &p.to_string(),
+            json!({"id":p,"space_id":Uuid::new_v4(),"name":"fixture","created_at":storage::now()}),
+        )
+        .await
+        .unwrap();
+    s.policy_store
+        .put(
+            p,
+            "group",
+            "g1",
+            0,
+            json!({
+                "name":"g","auto_name":false,"policy":policy,
+                "workspace":Value::Null,"status":"ready"
+            }),
+        )
+        .await
+        .unwrap();
+}
+#[tokio::test]
+async fn addressing_one_member_dispatches_only_to_that_agent() {
+    let s = state("at-single").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["alice", "carol"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("alice");
+    policy.members.push(Member {
+        path: vec!["carol".into()],
+        role: "reviewer".into(),
+    });
+    group(&s, p, policy).await;
+
+    let core = Core::new(s.clone());
+    core.group_chat(
+        p,
+        json!({"group_id":"g1","content":"@carol 看一下这个错误"}),
+    )
+    .await
+    .unwrap();
+    for _ in 0..250 {
+        if !s
+            .store
+            .list("runs")
+            .await
+            .iter()
+            .any(|r| matches!(r["status"].as_str(), Some("queued" | "running")))
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let logs = logs.lock().await;
+    assert_eq!(logs.len(), 1, "the unaddressed member ran: {logs:?}");
+    assert!(logs[0].starts_with("carol:"), "{logs:?}");
+    // The Agent must read the request, and be told the human chose it.
+    assert!(logs[0].contains("看一下这个错误"), "{logs:?}");
+    // The request itself no longer carries the address; the note explains why it ran.
+    assert!(
+        !logs[0].contains("@carol 看一下这个错误"),
+        "the mention was left in the request: {logs:?}"
+    );
+    assert!(
+        logs[0].contains("addressed directly by the human"),
+        "{logs:?}"
+    );
+}
+#[tokio::test]
+async fn addressing_nothing_keeps_the_whole_group_running() {
+    let s = state("at-none").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["alice", "carol"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("alice");
+    policy.members.push(Member {
+        path: vec!["carol".into()],
+        role: "reviewer".into(),
+    });
+    policy.mode = Mode::A2a;
+    policy.rounds = 2;
+    group(&s, p, policy).await;
+
+    // A `@name` that is not a member is prose, so the full group still answers.
+    let core = Core::new(s.clone());
+    core.group_chat(
+        p,
+        json!({"group_id":"g1","content":"ping @nobody about mail@example.com"}),
+    )
+    .await
+    .unwrap();
+    for _ in 0..250 {
+        if !s
+            .store
+            .list("runs")
+            .await
+            .iter()
+            .any(|r| matches!(r["status"].as_str(), Some("queued" | "running")))
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    // Two members across two rounds.
+    assert_eq!(logs.lock().await.len(), 4);
+}
+#[tokio::test]
+async fn a_mention_only_message_is_rejected_rather_than_sent_empty() {
+    let s = state("at-empty").await;
+    let p = Uuid::new_v4();
+    executor(&s, p, "alice", Arc::new(Mutex::new(vec![]))).await;
+    group(&s, p, relay("alice")).await;
+    let core = Core::new(s.clone());
+    assert!(
+        core.group_chat(p, json!({"group_id":"g1","content":"@alice"}))
+            .await
+            .is_err()
+    );
+    // A mention plus real content is fine.
+    assert!(
+        core.group_chat(p, json!({"group_id":"g1","content":"@alice 帮我看下"}))
+            .await
+            .is_ok()
+    );
+}
+#[tokio::test]
+async fn addressing_one_of_several_members_keeps_the_configured_mode() {
+    let s = state("at-two").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["alice", "carol", "dave"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("alice");
+    for id in ["carol", "dave"] {
+        policy.members.push(Member {
+            path: vec![id.into()],
+            role: "peer".into(),
+        });
+    }
+    policy.mode = Mode::A2a;
+    group(&s, p, policy).await;
+
+    let core = Core::new(s.clone());
+    core.group_chat(
+        p,
+        json!({"group_id":"g1","content":"@carol @dave 一起看看"}),
+    )
+    .await
+    .unwrap();
+    for _ in 0..250 {
+        if !s
+            .store
+            .list("runs")
+            .await
+            .iter()
+            .any(|r| matches!(r["status"].as_str(), Some("queued" | "running")))
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let logs = logs.lock().await;
+    assert_eq!(logs.len(), 2, "alice ran despite not being named: {logs:?}");
+    assert!(logs[0].starts_with("carol:") && logs[1].starts_with("dave:"));
+}
+#[tokio::test]
+async fn a_name_outside_the_group_is_reported_instead_of_answered_by_everyone() {
+    let s = state("at-stranger").await;
+    let p = Uuid::new_v4();
+    executor(&s, p, "alice", Arc::new(Mutex::new(vec![]))).await;
+    group(&s, p, relay("alice")).await;
+    // The group Chat mode holds exactly one member, so an unknown name must not
+    // silently degrade into that member answering a stranger's request.
+    let core = Core::new(s.clone());
+    let result = core
+        .group_chat(p, json!({"group_id":"g1","content":"@dave 在吗"}))
+        .await;
+    assert!(result.is_ok(), "@dave stays prose when it is not a member");
+}
+#[tokio::test]
+async fn a_next_unaddressed_turn_still_reaches_the_whole_group() {
+    let s = state("at-then-broad").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["alice", "carol"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("alice");
+    policy.members.push(Member {
+        path: vec!["carol".into()],
+        role: "reviewer".into(),
+    });
+    policy.mode = Mode::A2a;
+    group(&s, p, policy).await;
+
+    // Narrowing must not mutate the stored policy.
+    turn(&s, p, "g1", "看一下这个错误", vec![vec!["carol".into()]]).await;
+    assert_eq!(logs.lock().await.len(), 1);
+    logs.lock().await.clear();
+    turn(&s, p, "g1", "大家都看一下", vec![]).await;
+    assert_eq!(logs.lock().await.len(), 2, "the roster did not come back");
+    let stored = s.policy_store.get(p, "group", "g1").await.unwrap();
+    assert_eq!(
+        stored.body["policy"]["members"].as_array().unwrap().len(),
+        2,
+        "the saved policy was narrowed"
+    );
+}
+#[tokio::test]
+async fn a_pmo_plan_wrapped_in_prose_and_a_fence_still_dispatches() {
+    let s = state("pmo-fenced").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["chatty", "worker"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("chatty");
+    policy.members.push(Member {
+        path: vec!["worker".into()],
+        role: "researcher".into(),
+    });
+    policy.mode = Mode::Pmo;
+    policy.leader = Some(vec!["chatty".into()]);
+    let (tx, _) = mpsc::channel(128);
+    // The leader answers with a fenced plan wrapped in prose, which is what a model
+    // asked for "ONLY JSON" tends to produce anyway.
+    policies::engine(&s, p, &policy, "plan", &policies::Dispatch::new(&tx, &[]))
+        .await
+        .unwrap();
+    let logs = logs.lock().await;
+    assert_eq!(
+        logs.len(),
+        3,
+        "the fenced plan was not dispatched: {logs:?}"
+    );
+    assert!(logs[1].contains("do research"), "the assignment was lost");
+    assert!(logs[2].contains("worker completed"));
+}
+
+#[tokio::test]
+async fn a_pmo_that_answers_in_prose_is_asked_once_more_and_recovers() {
+    let s = state("pmo-retry").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["reluctant", "worker"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("reluctant");
+    policy.members.push(Member {
+        path: vec!["worker".into()],
+        role: "researcher".into(),
+    });
+    policy.mode = Mode::Pmo;
+    policy.leader = Some(vec!["reluctant".into()]);
+    let (tx, _) = mpsc::channel(128);
+    policies::engine(&s, p, &policy, "plan", &policies::Dispatch::new(&tx, &[]))
+        .await
+        .expect("one retry must recover a prose answer");
+    let logs = logs.lock().await;
+    // First ask, the retry that names the reason, then the dispatched work.
+    assert_eq!(logs.len(), 4, "{logs:?}");
+    assert!(logs[1].contains("previous answer was rejected"), "{logs:?}");
+    assert!(logs[2].contains("do research"), "{logs:?}");
+}
+
+#[tokio::test]
+async fn a_pmo_that_keeps_refusing_fails_after_exactly_one_retry() {
+    let s = state("pmo-stubborn").await;
+    let p = Uuid::new_v4();
+    let logs = Arc::new(Mutex::new(vec![]));
+    for id in ["stubborn", "worker"] {
+        executor(&s, p, id, logs.clone()).await;
+    }
+    let mut policy = relay("stubborn");
+    policy.members.push(Member {
+        path: vec!["worker".into()],
+        role: "researcher".into(),
+    });
+    policy.mode = Mode::Pmo;
+    policy.leader = Some(vec!["stubborn".into()]);
+    let (tx, _) = mpsc::channel(128);
+    let error = policies::engine(&s, p, &policy, "plan", &policies::Dispatch::new(&tx, &[]))
+        .await
+        .unwrap_err();
+    assert!(
+        error.contains("PMO must return JSON assignments"),
+        "{error}"
+    );
+    let logs = logs.lock().await;
+    // Two attempts, no third: the retry is bounded, and no work was dispatched.
+    assert_eq!(logs.len(), 2, "the retry did not stop: {logs:?}");
 }
 
 #[tokio::test]
@@ -694,7 +1254,7 @@ async fn relay_negotiates_before_dispatch_and_random_keeps_a_complete_order() {
     });
     policy.relay_strategy = crate::core::relay::Strategy::Negotiated;
     let (tx, mut rx) = mpsc::channel(128);
-    let answer = policies::engine(&s, p, &policy, "task", None, tx, &[])
+    let answer = policies::engine(&s, p, &policy, "task", &policies::Dispatch::new(&tx, &[]))
         .await
         .unwrap();
     assert_eq!(answer, "worker completed");
@@ -702,21 +1262,25 @@ async fn relay_negotiates_before_dispatch_and_random_keeps_a_complete_order() {
     assert_eq!(calls.len(), 3);
     assert!(calls[0].contains("RELAY NEGOTIATION ONLY"));
     assert!(calls[2].starts_with("worker:"));
+    // The engine already finished, so every chunk it sent is queued; the caller keeps
+    // the sender alive, which is why draining cannot wait for a close.
     let mut output = String::new();
-    while let Some(text) = rx.recv().await {
-        output.push_str(&text)
+    while let Ok(text) = rx.try_recv() {
+        output.push_str(&text);
     }
     assert!(output.contains("worker → leader"));
     policy.relay_strategy = crate::core::relay::Strategy::Random;
     logs.lock().await.clear();
     let (tx, mut rx) = mpsc::channel(128);
-    policies::engine(&s, p, &policy, "task", None, tx, &[])
+    policies::engine(&s, p, &policy, "task", &policies::Dispatch::new(&tx, &[]))
         .await
         .unwrap();
     assert_eq!(logs.lock().await.len(), 1);
+    // The engine already finished, so every chunk it sent is queued; the caller keeps
+    // the sender alive, which is why draining cannot wait for a close.
     let mut output = String::new();
-    while let Some(text) = rx.recv().await {
-        output.push_str(&text)
+    while let Ok(text) = rx.try_recv() {
+        output.push_str(&text);
     }
     assert!(output.contains("leader → worker") || output.contains("worker → leader"));
 }

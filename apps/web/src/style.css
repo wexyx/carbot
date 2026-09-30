@@ -24,6 +24,12 @@
 /* Keep approvals, command feedback and the composer on the same horizontal edges. */
 .composer-area{--composer-width:940px}
 .composer-area>.composer,.composer-area>.composer-feedback,.composer-area>.command-reply,.composer-area>.command-suggestions{width:100%;max-width:var(--composer-width);margin-inline:auto;min-width:0}
+.composer-area>.mention-popup{width:100%;max-width:var(--composer-width);margin-inline:auto;margin-bottom:10px}
+.mention-popup{display:flex;flex-direction:column;background:#fff;border:1px solid #e3e3e3;border-radius:10px;box-shadow:0 8px 24px #3030301f;overflow:hidden;max-height:240px;overflow-y:auto}
+.mention-option{display:flex;gap:14px;width:100%;background:transparent;border:0;border-radius:0;text-align:left;font-size:12px;padding:10px 14px;cursor:pointer;color:#5b5b5b}
+.mention-option span{color:#8e8e8e}
+.mention-option.active,.mention-option:hover{background:#f3f3f3}
+.mention-hint{padding:8px 14px;border-top:1px solid #eee;color:#9a9a9a;font-size:11px}
 .composer-area>.composer-feedback .approval-card{overflow-wrap:anywhere}
 
 .allowlist-page{min-width:0;overflow:auto;padding:28px;flex:1}.allowlist-page>p{color:var(--muted);margin:10px 0 20px}

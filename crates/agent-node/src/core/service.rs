@@ -190,17 +190,41 @@ impl Core {
     pub(crate) async fn group_chat(&self, project: Uuid, input: Value) -> Result<Value, String> {
         self.project(project).await?;
         let mut input = input;
-        let content = input["content"].as_str().ok_or("content required")?;
+        let group_id = input["group_id"]
+            .as_str()
+            .ok_or("group_id required")?
+            .to_owned();
+        let content = input["content"]
+            .as_str()
+            .ok_or("content required")?
+            .to_owned();
         if content.trim().is_empty() || content.len() > 192 * 1024 {
             return Err("content required, maximum 192 KiB".into());
         }
-        super::project_titles::from_message(
-            &self.state,
-            project,
-            input["group_id"].as_str().ok_or("group_id required")?,
-            content,
+        // `@name` is resolved against this group's own roster before the run starts, so
+        // the request reaches the Agent it names instead of the whole group. The title
+        // keeps the original text: an `@name` there still describes the message.
+        let policy: policies::Policy = serde_json::from_value(
+            self.state()
+                .policy_store
+                .get(project, "group", &group_id)
+                .await?
+                .body["policy"]
+                .clone(),
         )
-        .await?;
+        .map_err(|e| e.to_string())?;
+        let found = super::mentions::find(&content, &policy.members);
+        if !found.is_empty() {
+            // The log keeps what the human wrote, `@name` included, because that is
+            // the transcript; only the text the addressed Agents read drops the address.
+            let stripped = super::mentions::strip(&content, &found);
+            if stripped.is_empty() {
+                return Err("mention needs a request; 例如：@alice 请检查这个错误".into());
+            }
+            input["prompt"] = json!(stripped);
+            input["mentions"] = json!(found.iter().map(|m| &m.path).collect::<Vec<_>>());
+        }
+        super::project_titles::from_message(&self.state, project, &group_id, &content).await?;
         input["project_id"] = json!(project);
         let _guard = self.lifecycle_lock().lock().await;
         policies::begin_group(

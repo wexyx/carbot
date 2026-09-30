@@ -1,4 +1,13 @@
 use serde_json::Value;
+
+/// One streamed fragment, tagged by channel.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Delta {
+    /// Part of the reply shown as the answer.
+    Answer(String),
+    /// Deliberation: reported for folded progress, never part of the answer.
+    Reasoning(String),
+}
 use std::collections::BTreeMap;
 /// One model response, independent of HTTP and tool execution.
 #[derive(Default)]
@@ -29,12 +38,15 @@ impl Turn {
     pub(super) fn output(&self) -> &[Value] {
         &self.output
     }
-    pub(super) fn append_text(&mut self, text: &str, delta: &mut dyn FnMut(String)) {
+    pub(super) fn append_text(&mut self, text: &str, delta: &mut dyn FnMut(Delta)) {
         self.text.push_str(text);
-        delta(text.into());
+        delta(Delta::Answer(text.into()));
     }
-    pub(super) fn append_reasoning(&mut self, text: &str) {
+    /// Deliberation is retained for provider continuity and, unlike text, is also
+    /// reported so presentation layers can fold it instead of showing it as an answer.
+    pub(super) fn append_reasoning(&mut self, text: &str, delta: &mut dyn FnMut(Delta)) {
         self.reasoning.push_str(text);
+        delta(Delta::Reasoning(text.into()));
     }
     pub(super) fn calls_mut(&mut self) -> &mut BTreeMap<usize, Value> {
         &mut self.calls

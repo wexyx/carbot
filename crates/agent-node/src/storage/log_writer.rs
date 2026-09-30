@@ -1,6 +1,7 @@
 //! Ordered, bounded background writes. Streaming producers never wait for fsync.
 use super::chat_log::{ChatLog, Inner};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
@@ -87,13 +88,10 @@ async fn run(
     while let Some(first) = receiver.recv().await {
         let mut batch = vec![first];
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(40);
-        // An acknowledged write or read barrier closes the current batch immediately.
-        while batch.len() < 128
-            && matches!(
-                batch.last(),
-                Some(Message::Append(Append { reply: None, .. }))
-            )
-        {
+        // Only a read barrier closes the batch early. An acknowledged append can ride
+        // along with the deltas behind it: its oneshot is answered after the whole batch
+        // is durable, so there is nothing to gain from paying an extra fsync for it.
+        while batch.len() < 128 && !matches!(batch.last(), Some(Message::Barrier(_))) {
             match tokio::time::timeout_at(deadline, receiver.recv()).await {
                 Ok(Some(message)) => batch.push(message),
                 _ => break,
@@ -117,26 +115,45 @@ fn commit(log: ChatLog, batch: Vec<Message>, failure: &Mutex<Option<String>>) {
     let mut pending: Vec<Append> = Vec::new();
     for message in batch {
         match message {
-            Message::Append(next) => {
-                if pending
-                    .last()
-                    .is_some_and(|last| last.project != next.project || last.chat != next.chat)
-                {
-                    commit_chat(&log, &mut pending, failure);
-                }
-                pending.push(next);
-            }
+            Message::Append(next) => pending.push(next),
             Message::Barrier(reply) => {
-                commit_chat(&log, &mut pending, failure);
+                commit_all(&log, &mut pending, failure);
                 let result = failure.lock().unwrap().clone().map_or(Ok(()), Err);
                 let _ = reply.send(result);
             }
         }
     }
-    commit_chat(&log, &mut pending, failure);
+    commit_all(&log, &mut pending, failure);
+}
+
+/// One commit per chat in the batch, in first-appearance order. A group run interleaves
+/// two directories (the member's own session and the group chat), and splitting on every
+/// alternation reduced batching to a single fsync per streamed token.
+fn commit_all(log: &ChatLog, pending: &mut Vec<Append>, failure: &Mutex<Option<String>>) {
+    if pending.is_empty() {
+        return;
+    }
+    let mut order: Vec<(Uuid, String)> = Vec::new();
+    let mut grouped: HashMap<(Uuid, String), Vec<Append>> = HashMap::new();
+    for entry in pending.drain(..) {
+        let key = (entry.project, entry.chat.clone());
+        if !order.contains(&key) {
+            order.push(key.clone());
+        }
+        grouped.entry(key).or_default().push(entry);
+    }
+    for key in order {
+        if let Some(mut chat) = grouped.remove(&key) {
+            commit_chat(log, &mut chat, failure);
+        }
+    }
 }
 fn commit_chat(log: &ChatLog, pending: &mut Vec<Append>, failure: &Mutex<Option<String>>) {
     let Some(first) = pending.first() else { return };
+    #[cfg(test)]
+    log.0
+        .commits
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let previous = failure.lock().unwrap().clone();
     let project = first.project;
     let chat = first.chat.clone();

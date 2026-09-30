@@ -42,6 +42,11 @@
 [data-theme="light"] .command-reply,[data-theme="light"] .command-suggestions { background:#edf4fc;color:var(--ink);border-color:var(--line); }
 [data-theme="light"] .command-suggestions button { color:#25486a; }
 [data-theme="light"] .command-suggestions button:hover { background:#dceaf9; }
+[data-theme="light"] .mention-popup { background:#edf4fc;border-color:var(--line); }
+[data-theme="light"] .mention-option { color:#25486a; }
+[data-theme="light"] .mention-option span,[data-theme="light"] .mention-hint { color:#536d88; }
+[data-theme="light"] .mention-option.active,[data-theme="light"] .mention-option:hover { background:#dceaf9; }
+[data-theme="light"] .mention-hint { border-top-color:var(--line); }
 [data-theme="light"] .capability-nav button { background:#e8f0f8;color:#365b80; }
 [data-theme="light"] .welcome h1,[data-theme="light"] .detail-hero h3,[data-theme="light"] .node-connection strong { color:#203e60; }
 [data-theme="light"] .node-connection code,[data-theme="light"] .eyebrow,[data-theme="light"] .mode-icon,[data-theme="light"] .load-older { color:#2f6c9b; }

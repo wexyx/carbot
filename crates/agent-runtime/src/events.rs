@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -11,6 +12,11 @@ pub enum RuntimeErrorCode {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuntimeEvent {
     TextDelta {
+        text: String,
+    },
+    /// Model deliberation streamed for transparency. Never appended to the assistant
+    /// answer; presentation layers fold it into the in-progress execution area.
+    ReasoningDelta {
         text: String,
     },
     ToolStarted {
@@ -42,6 +48,7 @@ impl RuntimeEvent {
         match self {
             Self::TextDelta { text } => Some(text.clone()),
             Self::ToolStarted { name, .. } => Some(format!("\n[工具：{name}]\n")),
+            // Reasoning is deliberately absent: a text-only consumer must not surface it.
             _ => None,
         }
     }
@@ -50,6 +57,10 @@ impl RuntimeEvent {
     pub fn wire_progress(&self) -> Option<(&'static str, String)> {
         match self {
             Self::TextDelta { text } => Some(("agent.delta", text.clone())),
+            Self::ReasoningDelta { text } => Some((
+                "agent.reasoning",
+                json!({"type": "reasoning_delta", "text": text}).to_string(),
+            )),
             Self::ToolStarted { .. } => {
                 Some(("agent.tool.started", serde_json::to_string(self).unwrap()))
             }
@@ -81,6 +92,20 @@ mod tests {
             }
             .wire_progress()
             .is_none()
+        );
+        // Compare parsed fields; JSON object key order is not part of the contract.
+        let (kind, payload) = RuntimeEvent::ReasoningDelta { text: "hmm".into() }
+            .wire_progress()
+            .unwrap();
+        assert_eq!(kind, "agent.reasoning");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&payload).unwrap(),
+            json!({"type":"reasoning_delta","text":"hmm"})
+        );
+        assert!(
+            RuntimeEvent::ReasoningDelta { text: "hmm".into() }
+                .legacy_delta()
+                .is_none()
         );
         assert_eq!(
             RuntimeEvent::ToolStarted {

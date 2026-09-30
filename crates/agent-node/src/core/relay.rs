@@ -1,8 +1,7 @@
-use super::policies::{Member, Policy, run_member};
+use super::policies::{Dispatch, Member, Policy, run_member};
 use crate::AppState;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use std::collections::HashMap;
+use serde_json::json;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -25,15 +24,8 @@ fn parse_bid(text: &str) -> Result<Bid, String> {
     if text.len() > 8192 {
         return Err("bid too large".into());
     }
-    let text = text
-        .trim()
-        .strip_prefix("```json")
-        .or_else(|| text.trim().strip_prefix("```"))
-        .unwrap_or(text.trim())
-        .trim()
-        .trim_end_matches("```")
-        .trim();
-    let bid: Bid = serde_json::from_str(text).map_err(|_| "invalid negotiation response")?;
+    let bid: Bid = serde_json::from_value(agent_runtime::json::parse(text)?)
+        .map_err(|error| format!("invalid negotiation response: {error}"))?;
     if bid.priority > 100 || bid.reason.len() > 1024 {
         return Err("invalid bid priority or reason".into());
     }
@@ -53,10 +45,9 @@ pub(super) async fn run(
     p: Uuid,
     policy: &Policy,
     prompt: &str,
-    frozen: Option<&HashMap<String, Value>>,
-    output: &mpsc::Sender<String>,
-    ancestry: &[String],
+    dispatch: &Dispatch<'_>,
 ) -> Result<String, String> {
+    let output = dispatch.output;
     let (members, label) = match policy.relay_strategy {
         Strategy::Manual => (policy.members.clone(), "手动优先级"),
         Strategy::Random => {
@@ -88,8 +79,12 @@ pub(super) async fn run(
                 );
                 // Suppress raw negotiation deltas; report the validated bid as a concise event.
                 let (silent, mut receiver) = mpsc::channel(32);
+                let quiet = Dispatch {
+                    output: &silent,
+                    ..*dispatch
+                };
                 let response = tokio::select! {
-                    result=tokio::time::timeout(std::time::Duration::from_secs(15),super::member_events::MemberEvents::planning(run_member(state,p,member,&request,frozen,&silent,ancestry)))=>result.unwrap_or_else(|_|Err("negotiation timed out".into())),
+                    result=tokio::time::timeout(std::time::Duration::from_secs(15),super::member_events::MemberEvents::planning(run_member(state,p,member,&request,&quiet)))=>result.unwrap_or_else(|_|Err("negotiation timed out".into())),
                     _=async{while receiver.recv().await.is_some(){}}=>Err("negotiation stream closed".into()),
                 };
                 match response.and_then(|text| parse_bid(&text)) {
@@ -134,7 +129,7 @@ pub(super) async fn run(
         .await;
     let mut last = "no candidate".to_owned();
     for member in members {
-        match run_member(state, p, &member, prompt, frozen, output, ancestry).await {
+        match run_member(state, p, &member, prompt, dispatch).await {
             Ok(answer) => return Ok(answer),
             Err(error) if agent_runtime::is_token_insufficient(&error) => {
                 let _ = output

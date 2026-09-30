@@ -43,3 +43,30 @@ test('live tool JSON remains a tool event, not assistant text',()=>{
  const rows=conversationView([{seq:1,type:'agent.tool.started',agent:'a',invocation_id:'a1',content:'{"name":"command_run","input":{"command":"pwd"}}'},{seq:2,type:'agent.tool.finished',agent:'a',invocation_id:'a1',content:'{"output":"done"}'}])
  assert.equal(rows.length,1);assert.equal(rows[0].type,'tool');assert.equal(rows[0].pending,false)
 })
+test('deliberation folds into progress and never becomes part of the answer',()=>{
+ const events=[{seq:1,type:'user',content:'在哪'}]
+ for(let i=0;i<120;i++)events.push({seq:i+2,type:'agent.reasoning',agent:'default',invocation_id:'r1',content:JSON.stringify({type:'reasoning_delta',text:'想'})})
+ for(let i=0;i<120;i++)events.push({seq:200+i,type:'agent.reasoning',agent:'default',invocation_id:'r1',content:JSON.stringify({type:'reasoning_delta',text:'法'})})
+ events.push({seq:400,type:'agent.delta',agent:'default',invocation_id:'r1',content:'答案'})
+ events.push({seq:401,type:'agent.message',agent:'default',invocation_id:'r1',content:'答案'})
+ const rows=conversationView(events)
+ const answers=rows.filter(r=>r.type==='assistant')
+ assert.equal(answers.length,1)
+ assert.equal(answers[0].text,'答案')
+ const folded=rows.filter(r=>r.name==='reasoning')
+ assert.equal(folded.length,1)
+ assert.equal(folded[0].text.length,240)
+ assert.ok(!rows.some(r=>r.type==='assistant'&&r.text.includes('想')))
+})
+
+test('a new turn starts a fresh folded deliberation row instead of merging',()=>{
+ const rows=conversationView([
+  {seq:1,type:'agent.reasoning',agent:'default',invocation_id:'a',content:JSON.stringify({type:'reasoning_delta',text:'A'})},
+  {seq:2,type:'agent.message',agent:'default',invocation_id:'a',content:'first'},
+  {seq:3,type:'user',content:'again'},
+  {seq:4,type:'agent.reasoning',agent:'default',invocation_id:'b',content:JSON.stringify({type:'reasoning_delta',text:'B'})},
+  {seq:5,type:'agent.message',agent:'default',invocation_id:'b',content:'second'},
+ ])
+ assert.deepEqual(rows.filter(r=>r.name==='reasoning').map(r=>r.text),['A','B'])
+ assert.deepEqual(rows.filter(r=>r.type==='assistant').map(r=>r.text),['first','second'])
+})

@@ -135,11 +135,12 @@ pub async fn context(
 }
 
 pub async fn stopped(state: &AppState, id: Uuid) -> bool {
+    // Polled on a timer and per streamed token: never clone the whole run row here.
     state
         .store
-        .get("runs", &id.to_string())
+        .run_meta(&id.to_string())
         .await
-        .is_some_and(|r| r["status"] == "interrupted")
+        .is_some_and(|r| r.status.as_deref() == Some("interrupted"))
 }
 
 pub(crate) async fn interrupt_session(state: &AppState, id: Uuid) -> Result<Value, String> {

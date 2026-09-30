@@ -43,6 +43,9 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
     let mut exit_armed: Option<Instant> = None;
     let mut scroll = 0usize;
     let mut status = String::new();
+    // Refreshed on navigation so `@` completes against the group's current roster.
+    let mut mentions: Vec<String> = Vec::new();
+    let mut mention_group = String::new();
     let mut update_status = super::updater::subscribe();
     let update_check = tokio::spawn(super::updater::check());
     let mut tick = tokio::time::interval(Duration::from_millis(40));
@@ -56,6 +59,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                 result=update_status.changed()=>{if result.is_ok(){dirty=true;}},
                 item=keyboard.next()=>{
                     let Some(event)=item else {break;};
+                    if mention_group!=controller.group().unwrap_or_default(){mention_group=controller.group().unwrap_or_default();mentions=controller.mentionable().await;}
                     match event.map_err(|e|e.to_string())? {
                         Event::Resize(_,_)=>dirty=true,
 
@@ -64,6 +68,13 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                             dirty=true;
                             let ctrl=key.modifiers.contains(KeyModifiers::CONTROL);
                             if ctrl&&key.code==KeyCode::Char('p'){dialog.show();continue;}
+                            // Tab completes an `@name` this group can be addressed by,
+                            // before it falls through to slash-command completion.
+                            if key.code==KeyCode::Tab&&wizard.is_none()&&!dialog.visible() {
+                                if let Some(fragment)=editor.mention_prefix()
+                                    && let Some(name)=mentions.iter().find(|m|m.starts_with(fragment.as_str())).cloned()
+                                    {editor.complete_mention(&name);continue;}
+                            }
                             if dialog.visible()&&wizard.is_none() {
                                 if decision_job.is_some(){status="权限请求正在处理，请稍候。".into();continue;}
                                 if let Some((permission,allow,conversation))=dialog.key(key){
@@ -96,12 +107,15 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                                     let line=editor.submit(wizard.is_none());
                                     if let Some(config)=wizard.as_mut() {
                                         if line.trim()=="/cancel" {wizard=None;status="配置已取消。".into();continue;}
-                                        match config.submit(line) {
+                                        match config.submit(line).await {
                                             Ok(Some(settings))=>match manager.reconfigure(settings).await {
                                                 Ok(())=>{wizard=None;session_info=controller.session_info().await;status="默认 Agent 配置已保存并生效。".into();},
                                                 Err(e)=>status=e,
                                             },
-                                            Ok(None)=>status=config.prompt(),Err(e)=>status=e,
+                                            // A numbered model list belongs in the scrollback,
+                                            // which this inline REPL keeps, not in the status line.
+                                            Ok(None)=>{let listing=config.catalog_text();if !listing.is_empty(){transcript.push_str(&format!("\n{listing}"));}status=config.prompt()},
+                                            Err(e)=>status=e,
                                         }
                                         continue;
                                     }
@@ -130,7 +144,7 @@ pub(super) async fn run(manager: Arc<Manager>) -> Result<(), String> {
                             controller=next;
                             session_info=controller.session_info().await;
                             if action.exit{break;}
-                            if action.configure{match Settings::load(){Ok(settings)=>{wizard=Some(Wizard::new(settings));status=wizard.as_ref().unwrap().prompt();},Err(e)=>status=e};continue;}
+                            if action.configure{match Settings::load(){Ok(settings)=>{let mut config=Wizard::new(settings);config.refresh_catalog().await;status=config.prompt();wizard=Some(config);},Err(e)=>status=e};continue;}
                             if action.navigate{watcher.abort();let(p,id,b)=controller.view();(updates,watcher)=output::subscribe(manager.clone(),p,id,b,action.replay).await;presentation=Presentation::default();tools=Default::default();transcript.clear();busy=false;pending_echo=None;}
                             if action.sent {if busy{status="等待模型响应…".into();}}
                             else if action.navigate {status=action.text;}

@@ -94,6 +94,7 @@ pub(crate) async fn accept_client_event(
     if !matches!(
         input.kind.as_str(),
         "agent.delta"
+            | "agent.reasoning"
             | "agent.message"
             | "agent.done"
             | "agent.error"

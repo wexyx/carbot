@@ -1,4 +1,7 @@
-use super::super::{config::HarnessConfig, turn::Turn};
+use super::super::{
+    config::HarnessConfig,
+    turn::{Delta, Turn},
+};
 use crate::tools::{ToolDefinition, ToolRegistry};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -21,11 +24,13 @@ pub(in super::super) trait ModelProtocol: Send + Sync {
         history: &[Value],
         tools: &ToolRegistry,
     ) -> reqwest::RequestBuilder;
+    /// `delta` receives every fragment tagged by channel. Answer text becomes the reply;
+    /// deliberation is folded into progress and must never join the answer.
     fn consume(
         &self,
         turn: &mut Turn,
         value: Value,
-        delta: &mut dyn FnMut(String),
+        delta: &mut dyn FnMut(Delta),
     ) -> Result<(), String>;
     fn append_history(
         &self,

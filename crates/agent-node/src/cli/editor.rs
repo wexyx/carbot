@@ -52,6 +52,53 @@ impl Editor {
     pub(super) fn text(&self) -> String {
         self.buffer.iter().collect()
     }
+    /// The `@fragment` being typed at the cursor, if the caret sits in one.
+    ///
+    /// The fragment stops at the first character an Agent id cannot contain, so
+    /// `@alice,` reads as a finished name plus a comma, and a mention already
+    /// followed by a space is no longer being typed.
+    pub(super) fn mention_prefix(&self) -> Option<String> {
+        let text: String = self.buffer[..self.cursor].iter().collect();
+        let at = text.rfind('@')?;
+        // Only a fragment that starts at a word boundary is a mention in progress.
+        if text[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric())
+        {
+            return None;
+        }
+        let rest = &text[at + 1..];
+        let fragment: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+            .collect();
+        // A space after the name means the mention is finished, not in progress.
+        (!rest[fragment.len()..].starts_with(char::is_whitespace)).then_some(fragment)
+    }
+    /// Replace the in-progress mention fragment with a completed `@name`.
+    pub(super) fn complete_mention(&mut self, name: &str) {
+        // `mention_prefix` already proved a mention is in progress. Re-derive its span
+        // here so the caret can sit past punctuation the mention does not own.
+        let at = self.buffer[..self.cursor]
+            .iter()
+            .rposition(|c| *c == '@')
+            .expect("complete_mention called outside a mention");
+        let fragment = self.buffer[at + 1..self.cursor]
+            .iter()
+            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+            .count();
+        self.buffer.drain(at + 1..at + 1 + fragment);
+        self.buffer.splice(at + 1..at + 1, name.chars());
+        self.cursor = at + 1 + name.chars().count();
+        // A name at the very end of the line needs a trailing space; one followed by
+        // punctuation or a space already has its separator.
+        if self.cursor >= self.buffer.len() {
+            self.buffer.insert(self.cursor, ' ');
+            self.cursor += 1;
+        }
+        self.index = None;
+    }
     pub(super) fn before_cursor(&self) -> String {
         self.buffer[..self.cursor].iter().collect()
     }
@@ -162,6 +209,46 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn an_in_progress_mention_is_only_read_at_a_word_boundary() {
+        let mut e = Editor::default();
+        assert_eq!(e.mention_prefix(), None);
+        e.insert("@al");
+        assert_eq!(e.mention_prefix().as_deref(), Some("al"));
+        e.insert("ice and mail@example.com");
+        // The caret is past a space, so no mention is being typed.
+        assert_eq!(e.mention_prefix(), None);
+        e.clear();
+        e.insert("mail@example.com");
+        assert_eq!(e.mention_prefix(), None);
+        e.clear();
+        e.insert("@");
+        assert_eq!(e.mention_prefix().as_deref(), Some(""));
+    }
+    #[test]
+    fn completing_a_mention_replaces_only_the_fragment() {
+        let mut e = Editor::default();
+        e.insert("@bo");
+        e.complete_mention("bob");
+        assert_eq!(e.text(), "@bob ");
+        // The caret sits after the completed name, ready for the rest of the request.
+        assert_eq!(e.mention_prefix(), None);
+        e.insert("look at ");
+        assert_eq!(e.text(), "@bob look at ");
+        e.clear();
+        // A name completed mid-line keeps the text that follows it.
+        e.insert("@bo look at ");
+        for _ in 0.." look at ".len() {
+            e.key(KeyCode::Left.into(), false);
+        }
+        assert_eq!(e.mention_prefix().as_deref(), Some("bo"));
+        e.complete_mention("bob");
+        assert_eq!(e.text(), "@bob look at ");
+        e.clear();
+        e.insert("@alice,");
+        e.complete_mention("alice");
+        assert_eq!(e.text(), "@alice,");
+    }
     #[test]
     fn unicode_editing_history_and_completion() {
         let mut e = Editor::default();

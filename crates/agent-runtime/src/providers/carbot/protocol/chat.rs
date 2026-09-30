@@ -1,4 +1,8 @@
-use super::super::{config::HarnessConfig, prompt::SYSTEM, turn::Turn};
+use super::super::{
+    config::HarnessConfig,
+    prompt::SYSTEM,
+    turn::{Delta, Turn},
+};
 use super::contract::ModelProtocol;
 use crate::tools::{ToolDefinition, ToolRegistry};
 use serde_json::{Value, json};
@@ -39,7 +43,7 @@ impl ModelProtocol for ChatProtocol {
         &self,
         turn: &mut Turn,
         v: Value,
-        delta: &mut dyn FnMut(String),
+        delta: &mut dyn FnMut(Delta),
     ) -> Result<(), String> {
         if let Some(text) = v
             .pointer("/choices/0/delta/content")
@@ -47,11 +51,13 @@ impl ModelProtocol for ChatProtocol {
         {
             turn.append_text(text, delta);
         }
-        if let Some(text) = v
+        for part in v
             .pointer("/choices/0/delta/reasoning_content")
-            .and_then(Value::as_str)
+            .into_iter()
+            .chain(v.pointer("/choices/0/delta/reasoning"))
+            .filter_map(Value::as_str)
         {
-            turn.append_reasoning(text);
+            turn.append_reasoning(part, delta);
         }
         if let Some(calls) = v
             .pointer("/choices/0/delta/tool_calls")
