@@ -22,7 +22,7 @@ export async function runtimeReady(runtime=runtimeDirectory()){
  }catch{return false}
 }
 function checkScript(runtime){
- return `import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import {access} from 'node:fs/promises';import {constants} from 'node:fs';const require=createRequire(${JSON.stringify(join(runtime,'package.json'))});const {default:p}=await import(pathToFileURL(require.resolve('puppeteer')).href);await access(p.executablePath({headless:'shell'}),constants.X_OK)`
+ return `import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import {access} from 'node:fs/promises';import {constants} from 'node:fs';process.env.PUPPETEER_CACHE_DIR=${JSON.stringify(join(runtime,'browsers'))};const require=createRequire(${JSON.stringify(join(runtime,'package.json'))});const {default:p}=await import(pathToFileURL(require.resolve('puppeteer')).href);await access(await p.executablePath({headless:'shell'}),constants.X_OK)`
 }
 async function run(binary,args,env,cwd){
  await new Promise((resolve,reject)=>{

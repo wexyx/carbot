@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,mkdir,writeFile,readFile,rm,cp,access} from 'node:fs/promises'
 import {tmpdir,homedir} from 'node:os'
-import {join,resolve} from 'node:path'
+import {join,resolve,dirname} from 'node:path'
 import {spawn} from 'node:child_process'
-import {runtimeDirectory} from '../skills/system/business/browser-automation/runtime.mjs'
+import {runtimeDirectory,runtimeReady,puppeteerVersion} from '../skills/system/business/browser-automation/runtime.mjs'
 
 const source=resolve('skills/system/business/browser-automation')
 function run(script,env){
@@ -19,6 +19,30 @@ test('runtime directory follows instance data, not release, cwd or temporary HOM
  assert.equal(runtimeDirectory({CARBOT_INSTANCE:'demo'}),join(homedir(),'.carbot_demo/runtime/browser-automation/.runtime'))
  assert.equal(runtimeDirectory({CARBOT_DATA_DIR:'/tmp/custom-instance',CARBOT_INSTANCE:'demo'}),'/tmp/custom-instance/runtime/browser-automation/.runtime')
  assert.throws(()=>runtimeDirectory({CARBOT_INSTANCE:'../bad'}))
+})
+test('readiness check resolves the installed browser when CARBOT_TMP_DIR is set',{timeout:30000},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'carbot-browser-ready-'))
+ try{
+  const data=join(dir,'.carbot_ready')
+  // Build a real runtime layout with a stub Puppeteer whose executablePath()
+  // resolves from the cache directory, and a browser that exists on disk.
+  const runtime=join(data,'runtime','browser-automation','.runtime')
+  const pkg=join(runtime,'node_modules','puppeteer')
+  await mkdir(pkg,{recursive:true})
+  await writeFile(join(pkg,'package.json'),JSON.stringify({name:'puppeteer',version:puppeteerVersion,main:'index.cjs'}))
+  await writeFile(join(pkg,'index.cjs'),
+   "const p=require('path');exports.default=exports;exports.executablePath=async()=>p.join(process.env.PUPPETEER_CACHE_DIR,'chrome-headless-shell','mac_arm-154.0.8037.57','chrome-headless-shell')\n")
+  const exe=join(runtime,'browsers','chrome-headless-shell','mac_arm-154.0.8037.57','chrome-headless-shell')
+  await mkdir(dirname(exe),{recursive:true})
+  await writeFile(exe,'fixture',{mode:0o700})
+  // CARBOT_TMP_DIR must not hijack browser resolution: the readiness probe has
+  // to point Puppeteer at the installed cache, not Puppeteer's default tmpDir.
+  const ready=await runtimeReady(runtimeDirectory({CARBOT_DATA_DIR:data,CARBOT_TMP_DIR:join(dir,'elsewhere')}))
+  assert.equal(ready,true)
+  await rm(exe)
+  const missing=await runtimeReady(runtimeDirectory({CARBOT_DATA_DIR:data,CARBOT_TMP_DIR:join(dir,'elsewhere')}))
+  assert.equal(missing,false)
+ }finally{await rm(dir,{recursive:true,force:true})}
 })
 test('build once, reuse across releases, repair missing browser/package, isolate instances and serialize installers',{timeout:30000},async()=>{
  const dir=await mkdtemp(join(tmpdir(),'carbot-browser-runtime-'))
